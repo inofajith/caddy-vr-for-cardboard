@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>DIY Caddy VR - MR Edition</title>
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
+    <style>
+        #ui-overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: #000; color: white; display: flex; 
+            flex-direction: column; justify-content: center; 
+            align-items: center; z-index: 1000; font-family: sans-serif; 
+        }
+        button { 
+            padding: 20px 40px; font-size: 20px; cursor: pointer; 
+            background: #00ff00; border: none; border-radius: 10px; 
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="ui-overlay">
+        <h1>CADDY VR MR</h1>
+        <p id="status">Loading Engines...</p>
+        <button id="start-btn" style="display:none">START MIXED REALITY</button>
+    </div>
+    
+    <video id="input_video" style="display:none" playsinline></video>
+
+    <a-scene xr-mode-ui="enabled: true">
+        <a-assets>
+            <canvas id="feed-canvas"></canvas>
+        </a-assets>
+
+        <a-sky id="passthrough" material="src: #feed-canvas; shader: flat" rotation="0 -90 0"></a-sky>
+
+        <a-entity id="rig">
+            <a-camera id="cam" position="0 1.6 0" look-controls></a-camera>
+        </a-entity>
+
+        <a-sphere id="hand-cursor" radius="0.03" color="yellow" material="emissive: yellow; emissiveIntensity: 2"></a-sphere>
+
+        <a-entity id="gadget" position="0 1.5 -1.2">
+            <a-box id="part-casing" width="0.4" height="0.2" depth="0.08" color="#222" opacity="0.9"></a-box>
+            <a-cylinder id="part-chip" position="0 0 0.05" rotation="90 0 0" radius="0.05" height="0.02" color="#00ff00"></a-cylinder>
+        </a-entity>
+
+        <a-light type="ambient" intensity="0.8"></a-light>
+    </a-scene>
+
+    <script>
+        const videoElement = document.getElementById('input_video');
+        const feedCanvas = document.getElementById('feed-canvas');
+        const feedCtx = feedCanvas.getContext('2d');
+        const handCursor = document.getElementById('hand-cursor');
+        const startBtn = document.getElementById('start-btn');
+        const scene = document.querySelector('a-scene');
+        
+        // Drawing state
+        let isPinching = false;
+
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 0,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        hands.onResults(onResults);
+
+        function onResults(results) {
+            // Update the Passthrough Texture
+            if (results.image) {
+                feedCanvas.width = results.image.width;
+                feedCanvas.height = results.image.height;
+                feedCtx.drawImage(results.image, 0, 0, feedCanvas.width, feedCanvas.height);
+                
+                // Force A-Frame to refresh the sky texture
+                const sky = document.getElementById('passthrough');
+                if (sky.components.material) {
+                    sky.components.material.material.map.needsUpdate = true;
+                }
+            }
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const hand = results.multiHandLandmarks[0];
+                const indexTip = hand[8];
+                const thumbTip = hand[4];
+
+                // Coordinate Mapping (Back Camera)
+                const x = (indexTip.x - 0.5) * 3.5; 
+                const y = (0.5 - indexTip.y) * 2.5 + 1.6; 
+                const z = -1.2; 
+
+                handCursor.setAttribute('position', `${x} ${y} ${z}`);
+
+                const dist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+                
+                if (dist < 0.04) {
+                    handCursor.setAttribute('color', 'red');
+                    // 3D DRAW FEATURE
+                    drawPoint(x, y, z);
+                    
+                    // Explode check
+                    if (Math.abs(x) < 0.3 && Math.abs(y - 1.5) < 0.3) {
+                        document.getElementById('part-chip').setAttribute('animation', 'property: position; to: 0 0.5 0.2; dur: 800');
+                    }
+                } else {
+                    handCursor.setAttribute('color', 'yellow');
+                }
+            }
+        }
+
+        function drawPoint(x, y, z) {
+            const dot = document.createElement('a-sphere');
+            dot.setAttribute('radius', '0.015');
+            dot.setAttribute('color', '#ff0000');
+            dot.setAttribute('position', `${x} ${y} ${z}`);
+            // Add a slight fade out to keep performance stable
+            dot.setAttribute('animation', 'property: scale; to: 0 0 0; dur: 5000; delay: 2000');
+            scene.appendChild(dot);
+        }
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 640, height: 480, facingMode: 'environment'
+        });
+
+        window.onload = () => {
+            document.getElementById('status').innerText = "System Ready";
+            startBtn.style.display = "block";
+        };
+
+        startBtn.onclick = () => {
+            document.getElementById('ui-overlay').style.display = 'none';
+            camera.start();
+            // This triggers the split-screen Cardboard view
+            scene.enterVR();
+        };
+    </script>
+</body>
+</html>
