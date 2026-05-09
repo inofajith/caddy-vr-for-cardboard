@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Caddy VR | Mixed Reality Fixed</title>
+    <title>Caddy MR | Final Passthrough Fix</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -25,31 +25,34 @@
 
 <body>
     <div id="ui">
-        <h1>CADDY VR MR</h1>
-        <p id="status">CONNECTING CAMERA...</p>
-        <button id="start-btn" style="display:none">START SYSTEM</button>
+        <h1>CADDY MR SYSTEM</h1>
+        <p id="status">INITIATING PASSTHROUGH...</p>
+        <button id="start-btn" style="display:none">START MIXED REALITY</button>
     </div>
     
     <video id="input_video" style="display:none" playsinline></video>
 
-    <a-scene renderer="antialias: true; alpha: true; colorManagement: true;">
+    <a-scene renderer="colorManagement: true; alpha: true;">
         <a-assets>
             <canvas id="tex-canvas"></canvas>
         </a-assets>
 
-        <a-entity id="mr-container">
-            <a-sky id="mr-view" material="src: #tex-canvas; shader: flat; side: back; transparent: false" rotation="0 -90 0"></a-sky>
-        </a-entity>
-
-        <a-entity id="rig">
-            <a-camera position="0 1.6 0" look-controls></a-camera>
+        <a-entity id="camera-rig">
+            <a-camera position="0 1.6 0" look-controls>
+                <a-plane id="passthrough-plane" 
+                         position="0 0 -20" 
+                         rotation="0 0 0" 
+                         width="60" height="45" 
+                         material="src: #tex-canvas; shader: flat; transparent: false; fog: false">
+                </a-plane>
+            </a-camera>
         </a-entity>
 
         <a-sphere id="hand-cursor" radius="0.04" color="yellow" material="emissive: yellow; emissiveIntensity: 2"></a-sphere>
 
-        <a-box position="0 1.5 -1.2" width="0.3" height="0.3" depth="0.1" color="#222"></a-box>
+        <a-entity id="ink-container"></a-entity>
 
-        <a-light type="ambient" intensity="1"></a-light>
+        <a-light type="ambient" intensity="1.5"></a-light>
     </a-scene>
 
     <script>
@@ -59,8 +62,8 @@
         const handCursor = document.getElementById('hand-cursor');
         const startBtn = document.getElementById('start-btn');
         const scene = document.querySelector('a-scene');
+        const inkContainer = document.getElementById('ink-container');
 
-        // Initialize MediaPipe Hands
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
@@ -73,7 +76,7 @@
         });
 
         hands.onResults((results) => {
-            // 1. Draw camera to canvas
+            // Update the Passthrough Background
             if (results.image) {
                 if (texCanvas.width !== results.image.width) {
                     texCanvas.width = results.image.width;
@@ -81,33 +84,31 @@
                 }
                 texCtx.drawImage(results.image, 0, 0, texCanvas.width, texCanvas.height);
                 
-                // 2. FORCE the texture update inside the A-Frame material
-                const sky = document.getElementById('mr-view');
-                if (sky.getObject3D('mesh')) {
-                    const material = sky.getObject3D('mesh').material;
-                    if (material.map) {
-                        material.map.needsUpdate = true;
-                    }
+                const plane = document.getElementById('passthrough-plane');
+                if (plane.getObject3D('mesh')) {
+                    const mat = plane.getObject3D('mesh').material;
+                    if (mat.map) mat.map.needsUpdate = true;
                 }
             }
 
-            // 3. Hand Interaction
+            // Hand Tracking & Drawing
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const hand = results.multiHandLandmarks[0];
-                const x = (hand[8].x - 0.5) * 5; 
+                const x = (hand[8].x - 0.5) * -5; // Inverted for back camera perspective
                 const y = (0.5 - hand[8].y) * 4 + 1.6; 
-                const z = -1.2; 
+                const z = -1.5; 
 
                 handCursor.setAttribute('position', `${x} ${y} ${z}`);
 
                 const pinch = Math.hypot(hand[8].x - hand[4].x, hand[8].y - hand[4].y);
                 if (pinch < 0.05) {
                     handCursor.setAttribute('color', 'red');
+                    // 3D DRAWING
                     const dot = document.createElement('a-sphere');
-                    dot.setAttribute('radius', '0.015');
+                    dot.setAttribute('radius', '0.02');
                     dot.setAttribute('color', 'red');
                     dot.setAttribute('position', `${x} ${y} ${z}`);
-                    scene.appendChild(dot);
+                    inkContainer.appendChild(dot);
                 } else {
                     handCursor.setAttribute('color', 'yellow');
                 }
@@ -120,27 +121,15 @@
         });
 
         window.onload = () => {
-            if (window.location.protocol !== 'https:') {
-                document.getElementById('status').innerText = "HTTPS REQUIRED FOR CAMERA";
-            } else {
-                document.getElementById('status').innerText = "SYSTEMS ONLINE";
-                startBtn.style.display = "block";
-            }
+            document.getElementById('status').innerText = "LINK READY";
+            startBtn.style.display = "block";
         };
 
         startBtn.onclick = () => {
             document.getElementById('ui').style.display = 'none';
             camera.start();
-            // Enter VR mode
             scene.enterVR();
         };
-
-        // Fix for "Black Screen" in VR: Ensure sky follows the camera
-        scene.addEventListener('render-target-loaded', () => {
-            const sky = document.getElementById('mr-view');
-            // This prevents the camera feed from getting "lost" in 3D space
-            sky.setAttribute('position', '0 1.6 0');
-        });
     </script>
 </body>
 </html>
