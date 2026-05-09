@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>CADDY VR | Desktop Workstation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Caddy VR | Precision Hand Tracking</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -10,66 +11,57 @@
     <style>
         body { margin: 0; overflow: hidden; background: #000; }
         #ui { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: #00ff00; 
-              display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; font-family: 'Courier New', monospace; }
-        button { padding: 20px 50px; font-size: 22px; cursor: pointer; background: #00ff00; border: none; border-radius: 50px; font-weight: bold; color: black; box-shadow: 0 0 15px #00ff00; }
-        .info { margin-top: 20px; color: #666; text-align: center; font-size: 14px; }
+              display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; font-family: monospace; }
+        button { padding: 20px 50px; font-size: 22px; cursor: pointer; background: #00ff00; border: none; border-radius: 50px; font-weight: bold; color: black; }
     </style>
 </head>
 
 <body>
     <div id="ui">
-        <h1 style="letter-spacing: 5px;">CADDY VR</h1>
-        <p>ADVANCED CAD VISUALIZATION</p>
-        <button id="start-btn">BOOT SYSTEM</button>
-        <div class="info">Place phone in headset.<br>Use your hands to interact with the engine on the table.</div>
+        <h1>CADDY VR</h1>
+        <p>Precision Calibration: Active</p>
+        <button id="start-btn">ENGAGE VR</button>
     </div>
     
     <video id="input_video" style="display:none" playsinline></video>
 
     <a-scene shadow="type: pcfsoft">
-        <a-sky color="#080808"></a-sky>
+        <a-sky color="#050505"></a-sky>
 
-        <a-box id="table" position="0 0.7 -1" width="1.5" height="0.05" depth="1" color="#1a1a1a" shadow></a-box>
-        <a-box id="table-leg-l" position="-0.6 0.35 -1" width="0.05" height="0.7" depth="0.05" color="#111"></a-box>
-        <a-box id="table-leg-r" position="0.6 0.35 -1" width="0.05" height="0.7" depth="0.05" color="#111"></a-box>
+        <a-box id="table" position="0 0.7 -0.8" width="1.2" height="0.05" depth="0.8" color="#1a1a1a" shadow></a-box>
 
-        <a-entity id="engine-assembly" position="0 1.1 -1">
-            <a-box id="engine-block" width="0.3" height="0.3" depth="0.4" color="#333" metalness="0.5" shadow></a-box>
-            
-            <a-cylinder id="piston-l" position="-0.2 0 0" rotation="0 0 90" radius="0.08" height="0.1" color="#00ffff"></a-cylinder>
-            <a-cylinder id="piston-r" position="0.2 0 0" rotation="0 0 90" radius="0.08" height="0.1" color="#00ffff"></a-cylinder>
-            <a-box id="top-cover" position="0 0.2 0" width="0.25" height="0.05" depth="0.35" color="#ff0055"></a-box>
-            <a-sphere id="front-gear" position="0 0 0.25" radius="0.1" color="#ffcc00"></a-sphere>
+        <a-entity id="shapes-container">
+            <a-box class="grabable" position="-0.25 0.85 -0.8" width="0.15" height="0.15" depth="0.15" color="#ff4444" shadow></a-box>
+            <a-sphere class="grabable" position="0 0.85 -0.8" radius="0.1" color="#44ff44" shadow></a-sphere>
+            <a-cylinder class="grabable" position="0.25 0.85 -0.8" radius="0.08" height="0.2" color="#4444ff" shadow></a-cylinder>
         </a-entity>
 
-        <a-entity id="hand-rig"></a-entity>
+        <a-entity id="hand-mesh"></a-entity>
         
-        <a-entity id="annotation-layer"></a-entity>
+        <a-light type="ambient" intensity="0.5"></a-light>
+        <a-light type="point" position="0 2 -0.5" intensity="1" shadow></a-light>
 
-        <a-light type="ambient" intensity="0.4"></a-light>
-        <a-light type="spot" position="0 3 -1" target="#table" intensity="1" angle="30" shadow></a-light>
-        <a-light type="point" position="-1 2 0" intensity="0.5" color="#00ff00"></a-light>
-
-        <a-camera position="0 1.6 0"></a-camera>
+        <a-camera position="0 1.6 0" look-controls></a-camera>
     </a-scene>
 
     <script>
         const videoElement = document.getElementById('input_video');
-        const handRig = document.getElementById('hand-rig');
+        const handMesh = document.getElementById('hand-mesh');
         const startBtn = document.getElementById('start-btn');
-        const inkContainer = document.getElementById('annotation-layer');
+        const shapes = document.querySelectorAll('.grabable');
         
-        let joints = [];
-        let isExploded = false;
+        let handParts = [];
+        let grabbedObj = null;
 
-        // Create the 21-point hand skeleton
+        // Create the 21-point "Grey Hand" (Semi-transparent cylinders/spheres)
         for (let i = 0; i < 21; i++) {
-            let joint = document.createElement('a-sphere');
-            joint.setAttribute('radius', '0.012');
-            joint.setAttribute('color', '#00ff00');
-            joint.setAttribute('material', 'emissive: #00ff00; emissiveIntensity: 0.5');
-            handRig.appendChild(joint);
-            joints.push(joint);
+            let p = document.createElement('a-sphere');
+            p.setAttribute('radius', '0.015');
+            p.setAttribute('color', '#888'); // Grey hand color
+            p.setAttribute('opacity', '0.6');
+            p.setAttribute('material', 'flat');
+            handMesh.appendChild(p);
+            handParts.push(p);
         }
 
         const hands = new Hands({
@@ -87,66 +79,55 @@
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const hand = results.multiHandLandmarks[0];
                 
-                // Track Hand Joints
+                // PRECISION POSITIONING
+                // We use a specific offset to bring the hand DOWN to table level
                 hand.forEach((lm, i) => {
-                    const x = (lm.x - 0.5) * -3.5; // Mirrored for standard phone use
-                    const y = (0.5 - lm.y) * 2.5 + 1.5;
-                    const z = -1.0 + (lm.z * 0.5);
-                    joints[i].setAttribute('position', `${x} ${y} ${z}`);
+                    const x = (lm.x - 0.5) * -3; 
+                    const y = (0.5 - lm.y) * 2 + 1.0; // Lowered Y to match table height (0.8)
+                    const z = -0.8 + (lm.z * 0.3); // Depth aligned with shapes
+                    handParts[i].setAttribute('position', `${x} ${y} ${z}`);
                 });
 
                 const thumb = hand[4];
                 const index = hand[8];
-                const pinky = hand[20];
+                const middle = hand[12];
+                const palmX = (hand[9].x - 0.5) * -3;
+                const palmY = (0.5 - hand[9].y) * 2 + 1.0;
+                const palmZ = -0.8;
 
-                // --- GESTURE: PINCH (ANNOTATION) ---
+                // GRAB LOGIC (Meta Quest Style)
                 const pinchDist = Math.hypot(index.x - thumb.x, index.y - thumb.y);
-                if (pinchDist < 0.05) {
-                    const ax = (index.x - 0.5) * -3.5;
-                    const ay = (0.5 - index.y) * 2.5 + 1.5;
-                    createInk(ax, ay, -1.0);
+                
+                if (pinchDist < 0.06) {
+                    if (!grabbedObj) {
+                        attemptGrab(palmX, palmY, palmZ);
+                    }
+                } else {
+                    releaseGrab();
                 }
 
-                // --- GESTURE: FIST (EXPLODE ENGINE) ---
-                const fistDist = Math.hypot(index.x - pinky.x, index.y - pinky.y);
-                if (fistDist < 0.12 && !isExploded) {
-                    toggleExplosion(true);
-                    isExploded = true;
-                } else if (fistDist > 0.3 && isExploded) {
-                    toggleExplosion(false);
-                    isExploded = false;
+                if (grabbedObj) {
+                    grabbedObj.setAttribute('position', `${palmX} ${palmY} ${palmZ}`);
                 }
             }
         });
 
-        function createInk(x, y, z) {
-            const ink = document.createElement('a-sphere');
-            ink.setAttribute('radius', '0.007');
-            ink.setAttribute('color', '#ff0000');
-            ink.setAttribute('position', `${x} ${y} ${z}`);
-            inkContainer.appendChild(ink);
+        function attemptGrab(x, y, z) {
+            shapes.forEach(obj => {
+                const pos = obj.getAttribute('position');
+                const d = Math.hypot(x - pos.x, y - pos.y);
+                if (d < 0.25) {
+                    grabbedObj = obj;
+                    obj.setAttribute('scale', '1.1 1.1 1.1'); // Visual feedback
+                }
+            });
         }
 
-        function toggleExplosion(state) {
-            const pistonL = document.getElementById('piston-l');
-            const pistonR = document.getElementById('piston-r');
-            const topCover = document.getElementById('top-cover');
-            const gear = document.getElementById('front-gear');
-
-            const config = state ? {
-                pL: "-0.6 0.2 0.2", pR: "0.6 0.2 0.2", tC: "0 0.6 0", g: "0 0 0.6"
-            } : {
-                pL: "-0.2 0 0", pR: "0.2 0 0", tC: "0 0.2 0", g: "0 0 0.25"
-            };
-
-            const anim = (el, pos) => {
-                el.setAttribute('animation', `property: position; to: ${pos}; dur: 800; easing: easeOutExpo`);
-            };
-
-            anim(pistonL, config.pL);
-            anim(pistonR, config.pR);
-            anim(topCover, config.tC);
-            anim(gear, config.g);
+        function releaseGrab() {
+            if (grabbedObj) {
+                grabbedObj.setAttribute('scale', '1 1 1');
+                grabbedObj = null;
+            }
         }
 
         const camera = new Camera(videoElement, {
