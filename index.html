@@ -3,83 +3,90 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Caddy VR | Hand Tracking Stable</title>
+    <title>Caddy VR | Ultimate Edition</title>
     
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
 
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
-        #ui-overlay { 
+        #boot-loader { 
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: radial-gradient(circle, #222 0%, #000 100%); 
+            background: radial-gradient(circle, #1a1a1a 0%, #000 100%); 
             color: #00ff00; display: flex; flex-direction: column; 
-            justify-content: center; align-items: center; z-index: 1000; 
+            justify-content: center; align-items: center; z-index: 9999; 
         }
-        #msg { text-transform: uppercase; letter-spacing: 3px; font-size: 14px; margin-bottom: 20px; }
-        button { 
-            padding: 18px 45px; font-size: 20px; cursor: pointer; 
-            background: #00ff00; border: none; border-radius: 5px; 
-            font-weight: bold; color: black; transition: 0.3s;
-            box-shadow: 0 0 20px rgba(0, 255, 0, 0.4);
+        #start-btn { 
+            padding: 25px 60px; font-size: 24px; cursor: pointer; 
+            background: #00ff00; border: none; border-radius: 10px; 
+            font-weight: bold; color: black; box-shadow: 0 0 30px rgba(0, 255, 0, 0.5);
+            display: none; transition: transform 0.2s;
         }
-        button:hover { transform: scale(1.05); background: #fff; }
-        #debug-console { 
-            position: fixed; bottom: 0; width: 100%; background: rgba(0,0,0,0.8); 
-            color: #ff4444; font-size: 10px; padding: 5px; pointer-events: none;
+        #start-btn:active { transform: scale(0.95); }
+        #status-text { margin-top: 20px; letter-spacing: 2px; font-size: 12px; opacity: 0.7; }
+        .spinner {
+            width: 50px; height: 50px; border: 3px solid rgba(0,255,0,0.1);
+            border-top-color: #00ff00; border-radius: 50%; animation: spin 1s infinite linear;
+            margin-bottom: 20px;
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 
 <body>
-    <div id="ui-overlay">
-        <h1 style="font-weight: 200; margin-bottom: 5px;">CADDY VR</h1>
-        <p id="msg">Awaiting System Authorization...</p>
-        <button id="start-btn">INITIALIZE VR</button>
+    <div id="boot-loader">
+        <div class="spinner" id="spinner"></div>
+        <button id="start-btn">INITIALIZE CADDY VR</button>
+        <p id="status-text">LOADING CORE SYSTEMS...</p>
     </div>
     
-    <div id="debug-console"></div>
-    <video id="input_video" style="display:none" playsinline></video>
+    <video id="input_video" style="display:none" playsinline muted></video>
 
-    <a-scene renderer="colorManagement: true; antialias: true;">
+    <a-scene renderer="antialias: true; colorManagement: true; logarithmicDepthBuffer: true;">
         <a-sky color="#050505"></a-sky>
 
-        <a-box id="table" position="0 0.7 -0.8" width="1.4" height="0.05" depth="0.8" color="#1a1a1a"></a-box>
+        <a-entity id="environment">
+            <a-box position="0 0.7 -0.8" width="1.6" height="0.05" depth="1" color="#111"></a-box>
+            <a-grid color="#222" rotation="-90 0 0" width="20" height="20" opacity="0.2"></a-grid>
+        </a-entity>
         
-        <a-entity id="workshop-items">
-            <a-box class="grabable" position="-0.3 0.85 -0.8" width="0.12" height="0.12" depth="0.12" color="#ff4a4a"></a-box>
-            <a-sphere class="grabable" position="0 0.85 -0.8" radius="0.08" color="#4aff4a"></a-sphere>
-            <a-cylinder class="grabable" position="0.3 0.85 -0.8" radius="0.06" height="0.15" color="#4a4aff"></a-cylinder>
+        <a-entity id="shapes">
+            <a-box class="grab" position="-0.3 0.85 -0.8" scale="0.15 0.15 0.15" color="#ff3333"></a-box>
+            <a-sphere class="grab" position="0 0.85 -0.8" radius="0.1" color="#33ff33"></a-sphere>
+            <a-cylinder class="grab" position="0.3 0.85 -0.8" radius="0.08" height="0.2" color="#3333ff"></a-cylinder>
         </a-entity>
 
         <a-entity id="hand-skeleton"></a-entity>
         
         <a-light type="ambient" intensity="0.6"></a-light>
-        <a-light type="point" position="1 2 -0.5" intensity="0.8"></a-light>
+        <a-light type="point" position="0 3 0" intensity="0.8"></a-light>
         <a-camera position="0 1.6 0" look-controls="pointerLockEnabled: false"></a-camera>
     </a-scene>
 
     <script>
-        const videoElement = document.getElementById('input_video');
+        const video = document.getElementById('input_video');
         const startBtn = document.getElementById('start-btn');
-        const msg = document.getElementById('msg');
-        const debug = document.getElementById('debug-console');
+        const spinner = document.getElementById('spinner');
+        const status = document.getElementById('status-text');
         const skeleton = document.getElementById('hand-skeleton');
         
         let joints = [];
         let grabbedObj = null;
+        let currentHandData = null;
 
-        // Build the Ghost Hand Model
+        // Smoothing Factor (0.1 = super smooth/slow, 0.8 = fast/jittery)
+        const LERP_FACTOR = 0.4; 
+        const targetPositions = Array(21).fill().map(() => ({x: 0, y: 1.6, z: -1}));
+
+        // Build Hand Visuals
         for (let i = 0; i < 21; i++) {
-            let joint = document.createElement('a-sphere');
-            joint.setAttribute('radius', '0.015');
-            joint.setAttribute('color', '#cccccc');
-            joint.setAttribute('opacity', '0.5');
-            joint.setAttribute('material', 'flat');
-            skeleton.appendChild(joint);
-            joints.push(joint);
+            let j = document.createElement('a-sphere');
+            j.setAttribute('radius', '0.015');
+            j.setAttribute('color', '#ffffff');
+            j.setAttribute('opacity', '0.4');
+            j.setAttribute('material', 'flat');
+            skeleton.appendChild(j);
+            joints.push(j);
         }
 
         const hands = new Hands({
@@ -89,73 +96,84 @@
         hands.setOptions({
             maxNumHands: 1,
             modelComplexity: 1,
-            minDetectionConfidence: 0.7,
-            minTrackingConfidence: 0.7
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
         });
 
         hands.onResults((results) => {
-            // Remove UI once first hand is detected
-            if (document.getElementById('ui-overlay').style.display !== 'none') {
-                document.getElementById('ui-overlay').style.display = 'none';
+            currentHandData = results.multiHandLandmarks ? results.multiHandLandmarks[0] : null;
+            if (currentHandData && document.getElementById('boot-loader')) {
+                document.getElementById('boot-loader').style.display = 'none';
             }
+        });
 
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const hand = results.multiHandLandmarks[0];
-                
-                // Track Joint Positions
-                hand.forEach((lm, i) => {
-                    const x = (lm.x - 0.5) * -3; 
-                    const y = (0.5 - lm.y) * 2 + 1.1; 
-                    const z = -0.8 + (lm.z * 0.3);
-                    joints[i].setAttribute('position', `${x} ${y} ${z}`);
+        // The Super-Smooth Render Loop
+        function render() {
+            if (currentHandData) {
+                currentHandData.forEach((lm, i) => {
+                    // Calculate Target
+                    const tx = (lm.x - 0.5) * -3.5;
+                    const ty = (0.5 - lm.y) * 2.5 + 1.1;
+                    const tz = -0.8 + (lm.z * 0.4);
+
+                    // Apply Smoothing (Lerp)
+                    targetPositions[i].x += (tx - targetPositions[i].x) * LERP_FACTOR;
+                    targetPositions[i].y += (ty - targetPositions[i].y) * LERP_FACTOR;
+                    targetPositions[i].z += (tz - targetPositions[i].z) * LERP_FACTOR;
+
+                    joints[i].setAttribute('position', `${targetPositions[i].x} ${targetPositions[i].y} ${targetPositions[i].z}`);
                 });
 
-                const thumb = hand[4];
-                const index = hand[8];
-                const palmX = (hand[9].x - 0.5) * -3;
-                const palmY = (0.5 - hand[9].y) * 2 + 1.1;
-                const palmZ = -0.8;
+                // Interaction Logic (Pinch to Grab)
+                const thumb = targetPositions[4];
+                const index = targetPositions[8];
+                const palm = targetPositions[9];
+                const dist = Math.hypot(index.x - thumb.x, index.y - thumb.y);
 
-                // Simple Pinch-to-Grab logic
-                const pinch = Math.hypot(index.x - thumb.x, index.y - thumb.y);
-                if (pinch < 0.06) {
+                if (dist < 0.1) {
                     if (!grabbedObj) {
-                        const items = document.querySelectorAll('.grabable');
-                        items.forEach(obj => {
-                            const pos = obj.getAttribute('position');
-                            const d = Math.hypot(palmX - pos.x, palmY - pos.y);
-                            if (d < 0.2) grabbedObj = obj;
+                        document.querySelectorAll('.grab').forEach(obj => {
+                            const oPos = obj.getAttribute('position');
+                            if (Math.hypot(palm.x - oPos.x, palm.y - oPos.y) < 0.25) grabbedObj = obj;
                         });
                     }
-                } else {
-                    grabbedObj = null;
-                }
+                } else { grabbedObj = null; }
 
                 if (grabbedObj) {
-                    grabbedObj.setAttribute('position', `${palmX} ${palmY} ${palmZ}`);
+                    grabbedObj.setAttribute('position', `${palm.x} ${palm.y} ${palm.z}`);
                 }
             }
-        });
+            requestAnimationFrame(render);
+        }
 
-        const camera = new Camera(videoElement, {
-            onFrame: async () => { try { await hands.send({image: videoElement}); } catch(e) {} },
-            width: 640, height: 480
-        });
-
-        startBtn.onclick = () => {
-            msg.innerText = "Requesting Hardware Access...";
-            camera.start()
-                .then(() => {
-                    document.querySelector('a-scene').enterVR();
-                })
-                .catch(err => {
-                    debug.innerText = "Error: " + err.message;
-                    msg.innerText = "Camera Blocked or Not Found";
+        async function initCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480, facingMode: "user" } 
                 });
-        };
+                video.srcObject = stream;
+                await video.play();
+                
+                async function process() {
+                    await hands.send({ image: video });
+                    setTimeout(process, 10); // Performance throttle
+                }
+                process();
+                render();
+                document.querySelector('a-scene').enterVR();
+            } catch (err) {
+                status.innerText = "CAMERA ERROR: " + err.message;
+            }
+        }
 
-        // Fallback for script loading errors
-        window.onerror = (e) => { debug.innerText = "System Error: " + e; };
+        // Show Start Button after Assets Load
+        window.addEventListener('load', () => {
+            spinner.style.display = 'none';
+            startBtn.style.display = 'block';
+            status.innerText = "HARDWARE READY";
+        });
+
+        startBtn.onclick = initCamera;
     </script>
 </body>
 </html>
