@@ -3,16 +3,16 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Caddy VR | True Mixed Reality</title>
+    <title>Caddy VR | Mixed Reality Fixed</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 
     <style>
         body { margin: 0; overflow: hidden; background: #000; }
-        #overlay { 
+        #ui { 
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: #000; color: #00ff00; display: flex; 
+            background: #111; color: #00ff00; display: flex; 
             flex-direction: column; justify-content: center; 
             align-items: center; z-index: 1000; font-family: monospace;
         }
@@ -20,30 +20,26 @@
             padding: 20px 40px; font-size: 20px; cursor: pointer; 
             background: #00ff00; border: none; border-radius: 10px; font-weight: bold;
         }
-        #video-canvas { display: none; }
     </style>
 </head>
 
 <body>
-    <div id="overlay">
-        <h1>CADDY MR SYSTEM</h1>
-        <p id="status">INITIALIZING PASSTHROUGH...</p>
-        <button id="start-btn" style="display:none">ENGAGE MR</button>
+    <div id="ui">
+        <h1>CADDY VR MR</h1>
+        <p id="status">CONNECTING CAMERA...</p>
+        <button id="start-btn" style="display:none">START SYSTEM</button>
     </div>
     
     <video id="input_video" style="display:none" playsinline></video>
-    <canvas id="video-canvas"></canvas>
 
-    <a-scene xr-mode-ui="enabled: true" renderer="antialias: true; colorManagement: true;">
+    <a-scene renderer="antialias: true; alpha: true; colorManagement: true;">
         <a-assets>
             <canvas id="tex-canvas"></canvas>
         </a-assets>
 
-        <a-sphere id="mr-sphere" 
-                  radius="100" 
-                  material="src: #tex-canvas; shader: flat; side: back" 
-                  rotation="0 -90 0">
-        </a-sphere>
+        <a-entity id="mr-container">
+            <a-sky id="mr-view" material="src: #tex-canvas; shader: flat; side: back; transparent: false" rotation="0 -90 0"></a-sky>
+        </a-entity>
 
         <a-entity id="rig">
             <a-camera position="0 1.6 0" look-controls></a-camera>
@@ -51,7 +47,7 @@
 
         <a-sphere id="hand-cursor" radius="0.04" color="yellow" material="emissive: yellow; emissiveIntensity: 2"></a-sphere>
 
-        <a-box position="0 1.5 -1.5" width="0.2" height="0.2" depth="0.2" color="#444"></a-box>
+        <a-box position="0 1.5 -1.2" width="0.3" height="0.3" depth="0.1" color="#222"></a-box>
 
         <a-light type="ambient" intensity="1"></a-light>
     </a-scene>
@@ -64,6 +60,7 @@
         const startBtn = document.getElementById('start-btn');
         const scene = document.querySelector('a-scene');
 
+        // Initialize MediaPipe Hands
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
@@ -76,7 +73,7 @@
         });
 
         hands.onResults((results) => {
-            // Update the MR Texture
+            // 1. Draw camera to canvas
             if (results.image) {
                 if (texCanvas.width !== results.image.width) {
                     texCanvas.width = results.image.width;
@@ -84,29 +81,35 @@
                 }
                 texCtx.drawImage(results.image, 0, 0, texCanvas.width, texCanvas.height);
                 
-                // CRITICAL: Manually update the A-Frame texture map
-                const mrSphere = document.getElementById('mr-sphere');
-                if (mrSphere.components.material.material.map) {
-                    mrSphere.components.material.material.map.needsUpdate = true;
+                // 2. FORCE the texture update inside the A-Frame material
+                const sky = document.getElementById('mr-view');
+                if (sky.getObject3D('mesh')) {
+                    const material = sky.getObject3D('mesh').material;
+                    if (material.map) {
+                        material.map.needsUpdate = true;
+                    }
                 }
             }
 
-            // Tracking and Drawing
+            // 3. Hand Interaction
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const hand = results.multiHandLandmarks[0];
                 const x = (hand[8].x - 0.5) * 5; 
                 const y = (0.5 - hand[8].y) * 4 + 1.6; 
-                const z = -1.5; 
+                const z = -1.2; 
 
                 handCursor.setAttribute('position', `${x} ${y} ${z}`);
 
                 const pinch = Math.hypot(hand[8].x - hand[4].x, hand[8].y - hand[4].y);
                 if (pinch < 0.05) {
+                    handCursor.setAttribute('color', 'red');
                     const dot = document.createElement('a-sphere');
-                    dot.setAttribute('radius', '0.02');
+                    dot.setAttribute('radius', '0.015');
                     dot.setAttribute('color', 'red');
                     dot.setAttribute('position', `${x} ${y} ${z}`);
                     scene.appendChild(dot);
+                } else {
+                    handCursor.setAttribute('color', 'yellow');
                 }
             }
         });
@@ -117,20 +120,27 @@
         });
 
         window.onload = () => {
-            if (location.protocol !== 'https:') {
-                document.getElementById('status').innerText = "HTTPS REQUIRED";
+            if (window.location.protocol !== 'https:') {
+                document.getElementById('status').innerText = "HTTPS REQUIRED FOR CAMERA";
             } else {
-                document.getElementById('status').innerText = "SYSTEM READY";
+                document.getElementById('status').innerText = "SYSTEMS ONLINE";
                 startBtn.style.display = "block";
             }
         };
 
         startBtn.onclick = () => {
-            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('ui').style.display = 'none';
             camera.start();
-            // Enter VR / Cardboard mode
+            // Enter VR mode
             scene.enterVR();
         };
+
+        // Fix for "Black Screen" in VR: Ensure sky follows the camera
+        scene.addEventListener('render-target-loaded', () => {
+            const sky = document.getElementById('mr-view');
+            // This prevents the camera feed from getting "lost" in 3D space
+            sky.setAttribute('position', '0 1.6 0');
+        });
     </script>
 </body>
 </html>
