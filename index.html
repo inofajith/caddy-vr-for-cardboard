@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Caddy MR | True Passthrough</title>
+    <title>Caddy VR | MR Passthrough Fixed</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -25,12 +25,12 @@
 
 <body>
     <div id="ui">
-        <h1>CADDY MR SYSTEM</h1>
+        <h1>CADDY VR MR</h1>
         <p id="status">INITIATING MR LINK...</p>
         <button id="start-btn" style="display:none">START SYSTEM</button>
     </div>
     
-    <video id="input_video" style="display:none" playsinline></video>
+    <video id="input_video" style="display:none" playsinline muted></video>
 
     <a-scene renderer="antialias: true; alpha: true; colorManagement: true;">
         <a-assets>
@@ -40,9 +40,9 @@
         <a-entity id="rig">
             <a-camera position="0 1.6 0" look-controls>
                 <a-plane id="mr-plane" 
-                         position="0 0 -30" 
-                         width="80" height="60" 
-                         material="src: #tex-canvas; shader: flat; side: double; transparent: false; fog: false">
+                         position="0 0 -25" 
+                         width="70" height="50" 
+                         material="src: #tex-canvas; shader: flat; transparent: false; fog: false">
                 </a-plane>
             </a-camera>
         </a-entity>
@@ -83,8 +83,7 @@
                 }
                 texCtx.drawImage(results.image, 0, 0, texCanvas.width, texCanvas.height);
                 
-                // FORCE THE TEXTURE UPDATE
-                // This is the most important part: telling A-Frame the canvas has changed
+                // Force GPU Texture update
                 const mrPlane = document.getElementById('mr-plane');
                 const mesh = mrPlane.getObject3D('mesh');
                 if (mesh && mesh.material.map) {
@@ -92,13 +91,10 @@
                 }
             }
 
-            // Hand Tracking & 3D Drawing
+            // Hand Position Mapping (Back Camera)
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const hand = results.multiHandLandmarks[0];
-                
-                // Coordinate mapping for BACK camera (environment)
-                // Adjusting X/Y scale for a better "reach" feel
-                const x = (hand[8].x - 0.5) * 5; 
+                const x = (hand[8].x - 0.5) * 5.5; 
                 const y = (0.5 - hand[8].y) * 4 + 1.6; 
                 const z = -1.5; 
 
@@ -107,10 +103,8 @@
                 const pinch = Math.hypot(hand[8].x - hand[4].x, hand[8].y - hand[4].y);
                 if (pinch < 0.05) {
                     handCursor.setAttribute('color', 'red');
-                    
-                    // Create 3D Ink
                     const dot = document.createElement('a-sphere');
-                    dot.setAttribute('radius', '0.02');
+                    dot.setAttribute('radius', '0.015');
                     dot.setAttribute('color', 'red');
                     dot.setAttribute('position', `${x} ${y} ${z}`);
                     inkContainer.appendChild(dot);
@@ -126,14 +120,22 @@
         });
 
         window.onload = () => {
-            document.getElementById('status').innerText = "LINK READY";
+            document.getElementById('status').innerText = "SYSTEM READY";
             startBtn.style.display = "block";
         };
 
         startBtn.onclick = () => {
             document.getElementById('ui').style.display = 'none';
-            camera.start();
-            scene.enterVR(); // Switches to split-screen Cardboard view
+            
+            // Interaction to unlock audio/video on mobile
+            videoElement.play().then(() => {
+                camera.start();
+                scene.enterVR();
+            }).catch(err => {
+                console.error("Camera force play failed", err);
+                camera.start();
+                scene.enterVR();
+            });
         };
     </script>
 </body>
