@@ -3,69 +3,88 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Caddy VR | Precision Hand Tracking</title>
+    <title>Caddy VR | Precision Workshop</title>
+    
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.4.1646424915/camera_utils.js" crossorigin="anonymous"></script>
 
     <style>
-        body { margin: 0; overflow: hidden; background: #000; }
-        #ui { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: #00ff00; 
-              display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; font-family: monospace; }
-        button { padding: 20px 50px; font-size: 22px; cursor: pointer; background: #00ff00; border: none; border-radius: 50px; font-weight: bold; color: black; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: monospace; }
+        #ui-overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: #111; color: #00ff00; display: flex; 
+            flex-direction: column; justify-content: center; 
+            align-items: center; z-index: 1000; text-align: center;
+        }
+        #status-dots { font-size: 40px; margin-bottom: 20px; }
+        button { 
+            padding: 20px 50px; font-size: 22px; cursor: pointer; 
+            background: #00ff00; border: none; border-radius: 50px; 
+            font-weight: bold; color: black; display: none;
+        }
+        #debug-log { 
+            position: fixed; bottom: 10px; width: 100%; 
+            color: red; font-size: 12px; z-index: 1001; pointer-events: none;
+        }
     </style>
 </head>
 
 <body>
-    <div id="ui">
-        <h1>CADDY VR</h1>
-        <p>Precision Calibration: Active</p>
+    <div id="ui-overlay">
+        <div id="status-dots">...</div>
+        <h2 id="msg">INITIALIZING HAND TRACKING</h2>
         <button id="start-btn">ENGAGE VR</button>
     </div>
     
+    <div id="debug-log"></div>
     <video id="input_video" style="display:none" playsinline></video>
 
     <a-scene shadow="type: pcfsoft">
         <a-sky color="#050505"></a-sky>
 
-        <a-box id="table" position="0 0.7 -0.8" width="1.2" height="0.05" depth="0.8" color="#1a1a1a" shadow></a-box>
+        <a-box id="table" position="0 0.7 -0.8" width="1.5" height="0.05" depth="1" color="#1a1a1a" shadow></a-box>
 
         <a-entity id="shapes-container">
-            <a-box class="grabable" position="-0.25 0.85 -0.8" width="0.15" height="0.15" depth="0.15" color="#ff4444" shadow></a-box>
+            <a-box class="grabable" position="-0.3 0.85 -0.8" width="0.15" height="0.15" depth="0.15" color="#ff4444" shadow></a-box>
             <a-sphere class="grabable" position="0 0.85 -0.8" radius="0.1" color="#44ff44" shadow></a-sphere>
-            <a-cylinder class="grabable" position="0.25 0.85 -0.8" radius="0.08" height="0.2" color="#4444ff" shadow></a-cylinder>
+            <a-cylinder class="grabable" position="0.3 0.85 -0.8" radius="0.08" height="0.2" color="#4444ff" shadow></a-cylinder>
         </a-entity>
 
         <a-entity id="hand-mesh"></a-entity>
         
         <a-light type="ambient" intensity="0.5"></a-light>
         <a-light type="point" position="0 2 -0.5" intensity="1" shadow></a-light>
-
-        <a-camera position="0 1.6 0" look-controls></a-camera>
+        <a-camera position="0 1.6 0"></a-camera>
     </a-scene>
 
     <script>
+        const log = (text) => { document.getElementById('debug-log').innerText += text + "\n"; };
         const videoElement = document.getElementById('input_video');
         const handMesh = document.getElementById('hand-mesh');
         const startBtn = document.getElementById('start-btn');
-        const shapes = document.querySelectorAll('.grabable');
+        const statusMsg = document.getElementById('msg');
         
         let handParts = [];
         let grabbedObj = null;
 
-        // Create the 21-point "Grey Hand" (Semi-transparent cylinders/spheres)
-        for (let i = 0; i < 21; i++) {
-            let p = document.createElement('a-sphere');
-            p.setAttribute('radius', '0.015');
-            p.setAttribute('color', '#888'); // Grey hand color
-            p.setAttribute('opacity', '0.6');
-            p.setAttribute('material', 'flat');
-            handMesh.appendChild(p);
-            handParts.push(p);
-        }
+        // Initialize 21-point Ghost Hand
+        try {
+            for (let i = 0; i < 21; i++) {
+                let p = document.createElement('a-sphere');
+                p.setAttribute('radius', '0.015');
+                p.setAttribute('color', '#888');
+                p.setAttribute('opacity', '0.6');
+                p.setAttribute('material', 'flat');
+                handMesh.appendChild(p);
+                handParts.push(p);
+            }
+        } catch(e) { log("A-Frame Init Error: " + e.message); }
 
+        // Setup MediaPipe
         const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/${file}`
         });
 
         hands.setOptions({
@@ -76,34 +95,39 @@
         });
 
         hands.onResults((results) => {
+            // Hide loading overlay on first results
+            document.getElementById('ui-overlay').style.display = 'none';
+
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const hand = results.multiHandLandmarks[0];
                 
-                // PRECISION POSITIONING
-                // We use a specific offset to bring the hand DOWN to table level
+                // Position Hand on Table (Aligned with objects at Y=0.85)
                 hand.forEach((lm, i) => {
                     const x = (lm.x - 0.5) * -3; 
-                    const y = (0.5 - lm.y) * 2 + 1.0; // Lowered Y to match table height (0.8)
-                    const z = -0.8 + (lm.z * 0.3); // Depth aligned with shapes
+                    const y = (0.5 - lm.y) * 2 + 1.1; 
+                    const z = -0.8 + (lm.z * 0.3);
                     handParts[i].setAttribute('position', `${x} ${y} ${z}`);
                 });
 
                 const thumb = hand[4];
                 const index = hand[8];
-                const middle = hand[12];
                 const palmX = (hand[9].x - 0.5) * -3;
-                const palmY = (0.5 - hand[9].y) * 2 + 1.0;
+                const palmY = (0.5 - hand[9].y) * 2 + 1.1;
                 const palmZ = -0.8;
 
-                // GRAB LOGIC (Meta Quest Style)
+                // Pinch/Grab Logic
                 const pinchDist = Math.hypot(index.x - thumb.x, index.y - thumb.y);
-                
                 if (pinchDist < 0.06) {
                     if (!grabbedObj) {
-                        attemptGrab(palmX, palmY, palmZ);
+                        const items = document.querySelectorAll('.grabable');
+                        items.forEach(obj => {
+                            const pos = obj.getAttribute('position');
+                            const d = Math.hypot(palmX - pos.x, palmY - pos.y);
+                            if (d < 0.25) grabbedObj = obj;
+                        });
                     }
                 } else {
-                    releaseGrab();
+                    grabbedObj = null;
                 }
 
                 if (grabbedObj) {
@@ -112,33 +136,31 @@
             }
         });
 
-        function attemptGrab(x, y, z) {
-            shapes.forEach(obj => {
-                const pos = obj.getAttribute('position');
-                const d = Math.hypot(x - pos.x, y - pos.y);
-                if (d < 0.25) {
-                    grabbedObj = obj;
-                    obj.setAttribute('scale', '1.1 1.1 1.1'); // Visual feedback
-                }
-            });
-        }
-
-        function releaseGrab() {
-            if (grabbedObj) {
-                grabbedObj.setAttribute('scale', '1 1 1');
-                grabbedObj = null;
-            }
-        }
-
         const camera = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
+            onFrame: async () => { 
+                try { await hands.send({image: videoElement}); } catch(e) {}
+            },
             width: 640, height: 480
         });
 
+        // Initialize App
+        window.addEventListener('load', () => {
+            statusMsg.innerText = "CAMERA ACCESS REQUIRED";
+            startBtn.style.display = "block";
+            document.getElementById('status-dots').style.display = 'none';
+        });
+
         startBtn.onclick = () => {
-            document.getElementById('ui').style.display = 'none';
-            camera.start();
-            document.querySelector('a-scene').enterVR();
+            startBtn.innerText = "STARTING...";
+            camera.start()
+                .then(() => {
+                    statusMsg.innerText = "TRACKING ACTIVE - MOVE HANDS";
+                    document.querySelector('a-scene').enterVR();
+                })
+                .catch(err => {
+                    log("Camera Error: " + err.name);
+                    statusMsg.innerText = "CAMERA FAILED";
+                });
         };
     </script>
 </body>
