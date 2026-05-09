@@ -2,9 +2,8 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Caddy VR | Pro Physics Hands</title>
+    <title>CADDY VR Clone | Assembly & Annotation</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/c-frame/aframe-physics-system@v4.2.2/dist/aframe-physics-system.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 
@@ -12,57 +11,63 @@
         body { margin: 0; overflow: hidden; background: #000; }
         #ui { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #111; color: #00ff00; 
               display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; font-family: monospace; }
-        button { padding: 20px 40px; font-size: 20px; cursor: pointer; background: #00ff00; border: none; border-radius: 10px; font-weight: bold; }
+        button { padding: 20px 40px; font-size: 20px; cursor: pointer; background: #00ff00; border: none; border-radius: 10px; font-weight: bold; color: black; }
+        .hint { margin-top: 15px; color: #888; font-size: 14px; text-align: center; }
     </style>
 </head>
 
 <body>
     <div id="ui">
-        <h1>PRO CADDY VR</h1>
-        <p>Full Hand Physics + Gravity</p>
-        <button id="start-btn">INITIALIZE SYSTEM</button>
+        <h1>CADDY VR CLONE</h1>
+        <p>Assembly • Disassembly • 3D Draw</p>
+        <button id="start-btn">INITIALIZE VR INTERFACE</button>
+        <div class="hint">PINCH: Draw in 3D<br>FIST: Explode/Assemble Model</div>
     </div>
     
     <video id="input_video" style="display:none" playsinline></video>
 
-    <a-scene physics="debug: false; gravity: -9.8">
-        <a-sky color="#0a0a0a"></a-sky>
+    <a-scene>
+        <a-sky color="#050505"></a-sky>
 
-        <a-box id="table" position="0 0.8 -1.2" width="2" height="0.1" depth="1" color="#333" static-body></a-box>
-        <a-plane position="0 0 0" rotation="-90 0 0" width="20" height="20" color="#111" static-body></a-plane>
+        <a-entity id="hand-skeleton"></a-entity>
 
-        <a-box class="grabable" position="-0.3 1.2 -1.2" width="0.2" height="0.2" depth="0.2" color="#f00" dynamic-body="mass: 1"></a-box>
-        <a-sphere class="grabable" position="0 1.2 -1.2" radius="0.15" color="#0f0" dynamic-body="mass: 1"></a-sphere>
-        <a-cylinder class="grabable" position="0.3 1.2 -1.2" radius="0.1" height="0.3" color="#00f" dynamic-body="mass: 1"></a-cylinder>
-
-        <a-entity id="rig">
-            <a-camera position="0 1.6 0"></a-camera>
+        <a-entity id="complex-model" position="0 1.5 -1.2">
+            <a-box id="core" width="0.3" height="0.3" depth="0.3" color="#444"></a-box>
+            
+            <a-sphere id="part-1" class="engine-part" position="0.2 0 0" radius="0.1" color="#00ffff"></a-sphere>
+            <a-sphere id="part-2" class="engine-part" position="-0.2 0 0" radius="0.1" color="#00ffff"></a-sphere>
+            <a-cylinder id="part-3" class="engine-part" position="0 0.2 0" radius="0.05" height="0.2" color="#ff00ff"></a-cylinder>
+            <a-cylinder id="part-4" class="engine-part" position="0 -0.2 0" radius="0.05" height="0.2" color="#ff00ff"></a-cylinder>
         </a-entity>
 
-        <a-entity id="full-hand"></a-entity>
+        <a-plane position="1.2 1.8 -1.5" width="0.8" height="0.5" color="#222">
+            <a-text value="GESTURES:\nPinch: Draw\nFist: Explode" align="center" width="2" color="white"></a-text>
+        </a-plane>
+
+        <a-entity id="drawing-container"></a-entity>
 
         <a-light type="ambient" intensity="0.7"></a-light>
-        <a-light type="directional" position="1 3 1" intensity="0.8"></a-light>
+        <a-light type="point" position="2 4 4" intensity="1"></a-light>
+        <a-camera position="0 1.6 0"></a-camera>
     </a-scene>
 
     <script>
         const videoElement = document.getElementById('input_video');
-        const handContainer = document.getElementById('full-hand');
+        const skeleton = document.getElementById('hand-skeleton');
         const startBtn = document.getElementById('start-btn');
         const scene = document.querySelector('a-scene');
+        const model = document.getElementById('complex-model');
         
         let joints = [];
-        let grabbedElement = null;
+        let isExploded = false;
 
-        // Initialize 21 spheres for hand joints
+        // Setup 21 Joints for the Hand Skeleton
         for (let i = 0; i < 21; i++) {
-            let sphere = document.createElement('a-sphere');
-            sphere.setAttribute('radius', '0.015');
-            sphere.setAttribute('color', '#00ff00');
-            // Add physics to joints to interact with objects
-            sphere.setAttribute('static-body', 'shape: sphere; sphereRadius: 0.02');
-            handContainer.appendChild(sphere);
-            joints.push(sphere);
+            let dot = document.createElement('a-sphere');
+            dot.setAttribute('radius', '0.01');
+            dot.setAttribute('color', '#00ff00');
+            skeleton.appendChild(dot);
+            joints.push(dot);
         }
 
         const hands = new Hands({
@@ -75,61 +80,66 @@
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const hand = results.multiHandLandmarks[0];
                 
-                // Update joint positions
+                // Update Skeleton Position
                 hand.forEach((lm, i) => {
-                    const x = (lm.x - 0.5) * -3; // Front camera mapping
+                    const x = (lm.x - 0.5) * -3.5; 
                     const y = (0.5 - lm.y) * 2.5 + 1.5;
                     const z = -1.2 + (lm.z * 0.5);
-                    
                     joints[i].setAttribute('position', `${x} ${y} ${z}`);
                 });
 
-                // Realistic Grab Logic
-                // If Thumb (4) and Index (8) and Middle (12) are close = GRAB
                 const thumb = hand[4];
                 const index = hand[8];
-                const middle = hand[12];
+                const pinky = hand[20];
 
+                // --- 1. PINCH GESTURE: DRAWING ---
                 const pinchDist = Math.hypot(index.x - thumb.x, index.y - thumb.y);
-                const palmX = (hand[9].x - 0.5) * -3; 
-                const palmY = (0.5 - hand[9].y) * 2.5 + 1.5;
-
-                if (pinchDist < 0.06) {
-                    if (!grabbedElement) {
-                        checkGrab(palmX, palmY, -1.2);
-                    }
-                } else {
-                    releaseGrab();
+                if (pinchDist < 0.05) {
+                    const x = (index.x - 0.5) * -3.5;
+                    const y = (0.5 - index.y) * 2.5 + 1.5;
+                    drawPoint(x, y, -1.2);
                 }
 
-                if (grabbedElement) {
-                    // Update grabbed object position to follow palm
-                    grabbedElement.setAttribute('position', `${palmX} ${palmY} -1.2`);
-                    // Sleep physics while held so it doesn't jitter
-                    if (grabbedElement.body) {
-                        grabbedElement.body.velocity.set(0,0,0);
-                        grabbedElement.body.angularVelocity.set(0,0,0);
-                    }
+                // --- 2. FIST GESTURE: EXPLODE/ASSEMBLE ---
+                // Detect if fingers are curled (Fist)
+                const fistDist = Math.hypot(index.x - pinky.x, index.y - pinky.y);
+                if (fistDist < 0.1 && !isExploded) {
+                    triggerExplosion(true);
+                    isExploded = true;
+                } else if (fistDist > 0.3 && isExploded) {
+                    triggerExplosion(false);
+                    isExploded = false;
                 }
             }
         });
 
-        function checkGrab(x, y, z) {
-            const items = document.querySelectorAll('.grabable');
-            items.forEach(item => {
-                const itemPos = item.getAttribute('position');
-                const dist = Math.hypot(x - itemPos.x, y - itemPos.y);
-                if (dist < 0.3) {
-                    grabbedElement = item;
-                    item.setAttribute('color', 'yellow'); // Feedback
-                }
-            });
+        function drawPoint(x, y, z) {
+            const dot = document.createElement('a-sphere');
+            dot.setAttribute('radius', '0.008');
+            dot.setAttribute('color', '#ff0000');
+            dot.setAttribute('position', `${x} ${y} ${z}`);
+            document.getElementById('drawing-container').appendChild(dot);
         }
 
-        function releaseGrab() {
-            if (grabbedElement) {
-                grabbedElement.setAttribute('color', grabbedElement.dataset.origColor || grabbedElement.getAttribute('color'));
-                grabbedElement = null;
+        function triggerExplosion(explode) {
+            const p1 = document.getElementById('part-1');
+            const p2 = document.getElementById('part-2');
+            const p3 = document.getElementById('part-3');
+            const p4 = document.getElementById('part-4');
+
+            const dur = 1000;
+            const ease = "easeOutElastic";
+
+            if (explode) {
+                p1.setAttribute('animation', `property: position; to: 0.8 0 0.5; dur: ${dur}; easing: ${ease}`);
+                p2.setAttribute('animation', `property: position; to: -0.8 0 0.5; dur: ${dur}; easing: ${ease}`);
+                p3.setAttribute('animation', `property: position; to: 0 0.8 -0.5; dur: ${dur}; easing: ${ease}`);
+                p4.setAttribute('animation', `property: position; to: 0 -0.8 -0.5; dur: ${dur}; easing: ${ease}`);
+            } else {
+                p1.setAttribute('animation', `property: position; to: 0.2 0 0; dur: ${dur}; easing: ${ease}`);
+                p2.setAttribute('animation', `property: position; to: -0.2 0 0; dur: ${dur}; easing: ${ease}`);
+                p3.setAttribute('animation', `property: position; to: 0 0.2 0; dur: ${dur}; easing: ${ease}`);
+                p4.setAttribute('animation', `property: position; to: 0 -0.2 0; dur: ${dur}; easing: ${ease}`);
             }
         }
 
@@ -141,7 +151,6 @@
         startBtn.onclick = () => {
             document.getElementById('ui').style.display = 'none';
             camera.start();
-            // Enter VR for cardboard
             scene.enterVR();
         };
     </script>
