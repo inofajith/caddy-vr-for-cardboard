@@ -3,88 +3,76 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Caddy VR | Ultimate Edition</title>
+    <title>Caddy VR | Pro Edition</title>
     
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; }
-        #boot-loader { 
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #launcher { 
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: radial-gradient(circle, #1a1a1a 0%, #000 100%); 
-            color: #00ff00; display: flex; flex-direction: column; 
-            justify-content: center; align-items: center; z-index: 9999; 
+            background: #000; color: #00ff00; display: flex; 
+            flex-direction: column; justify-content: center; 
+            align-items: center; z-index: 9999; text-align: center;
         }
-        #start-btn { 
-            padding: 25px 60px; font-size: 24px; cursor: pointer; 
-            background: #00ff00; border: none; border-radius: 10px; 
-            font-weight: bold; color: black; box-shadow: 0 0 30px rgba(0, 255, 0, 0.5);
-            display: none; transition: transform 0.2s;
+        .btn { 
+            padding: 20px 50px; font-size: 22px; cursor: pointer; 
+            background: #00ff00; border: none; border-radius: 5px; 
+            font-weight: bold; color: black; margin-top: 20px;
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.3);
         }
-        #start-btn:active { transform: scale(0.95); }
-        #status-text { margin-top: 20px; letter-spacing: 2px; font-size: 12px; opacity: 0.7; }
-        .spinner {
-            width: 50px; height: 50px; border: 3px solid rgba(0,255,0,0.1);
-            border-top-color: #00ff00; border-radius: 50%; animation: spin 1s infinite linear;
-            margin-bottom: 20px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        #status { font-size: 12px; color: #666; margin-top: 15px; }
     </style>
 </head>
 
 <body>
-    <div id="boot-loader">
-        <div class="spinner" id="spinner"></div>
-        <button id="start-btn">INITIALIZE CADDY VR</button>
-        <p id="status-text">LOADING CORE SYSTEMS...</p>
+    <div id="launcher">
+        <h1 style="letter-spacing: 10px;">CADDY</h1>
+        <button id="start-btn" class="btn">START SYSTEM</button>
+        <p id="status">Awaiting User Interaction...</p>
     </div>
     
     <video id="input_video" style="display:none" playsinline muted></video>
 
-    <a-scene renderer="antialias: true; colorManagement: true; logarithmicDepthBuffer: true;">
+    <a-scene renderer="antialias: true; colorManagement: true;">
         <a-sky color="#050505"></a-sky>
 
-        <a-entity id="environment">
-            <a-box position="0 0.7 -0.8" width="1.6" height="0.05" depth="1" color="#111"></a-box>
-            <a-grid color="#222" rotation="-90 0 0" width="20" height="20" opacity="0.2"></a-grid>
-        </a-entity>
+        <a-box position="0 0.7 -0.8" width="1.5" height="0.05" depth="0.8" color="#111"></a-box>
         
         <a-entity id="shapes">
-            <a-box class="grab" position="-0.3 0.85 -0.8" scale="0.15 0.15 0.15" color="#ff3333"></a-box>
-            <a-sphere class="grab" position="0 0.85 -0.8" radius="0.1" color="#33ff33"></a-sphere>
-            <a-cylinder class="grab" position="0.3 0.85 -0.8" radius="0.08" height="0.2" color="#3333ff"></a-cylinder>
+            <a-box class="grab" position="-0.3 0.85 -0.8" width="0.12" height="0.12" depth="0.12" color="#ff4444"></a-box>
+            <a-sphere class="grab" position="0 0.85 -0.8" radius="0.08" color="#44ff44"></a-sphere>
+            <a-cylinder class="grab" position="0.3 0.85 -0.8" radius="0.06" height="0.15" color="#4444ff"></a-cylinder>
         </a-entity>
 
-        <a-entity id="hand-skeleton"></a-entity>
+        <a-entity id="hand-mesh"></a-entity>
         
-        <a-light type="ambient" intensity="0.6"></a-light>
-        <a-light type="point" position="0 3 0" intensity="0.8"></a-light>
-        <a-camera position="0 1.6 0" look-controls="pointerLockEnabled: false"></a-camera>
+        <a-light type="ambient" intensity="0.7"></a-light>
+        <a-light type="point" position="0 2 0" intensity="0.8"></a-light>
+        <a-camera position="0 1.6 0"></a-camera>
     </a-scene>
 
     <script>
         const video = document.getElementById('input_video');
         const startBtn = document.getElementById('start-btn');
-        const spinner = document.getElementById('spinner');
-        const status = document.getElementById('status-text');
-        const skeleton = document.getElementById('hand-skeleton');
+        const status = document.getElementById('status');
+        const skeleton = document.getElementById('hand-mesh');
         
         let joints = [];
         let grabbedObj = null;
-        let currentHandData = null;
 
-        // Smoothing Factor (0.1 = super smooth/slow, 0.8 = fast/jittery)
-        const LERP_FACTOR = 0.4; 
-        const targetPositions = Array(21).fill().map(() => ({x: 0, y: 1.6, z: -1}));
+        // Smooth movement variables
+        const lerp = (a, b, t) => a + (b - a) * t;
+        let smoothHand = Array(21).fill().map(() => ({x: 0, y: 1.6, z: -1}));
 
         // Build Hand Visuals
         for (let i = 0; i < 21; i++) {
             let j = document.createElement('a-sphere');
             j.setAttribute('radius', '0.015');
-            j.setAttribute('color', '#ffffff');
-            j.setAttribute('opacity', '0.4');
-            j.setAttribute('material', 'flat');
+            j.setAttribute('color', '#888');
+            j.setAttribute('opacity', '0.5');
             skeleton.appendChild(j);
             joints.push(j);
         }
@@ -93,87 +81,62 @@
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
 
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 1,
-            minDetectionConfidence: 0.6,
-            minTrackingConfidence: 0.6
-        });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
 
         hands.onResults((results) => {
-            currentHandData = results.multiHandLandmarks ? results.multiHandLandmarks[0] : null;
-            if (currentHandData && document.getElementById('boot-loader')) {
-                document.getElementById('boot-loader').style.display = 'none';
-            }
-        });
-
-        // The Super-Smooth Render Loop
-        function render() {
-            if (currentHandData) {
-                currentHandData.forEach((lm, i) => {
-                    // Calculate Target
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                document.getElementById('launcher').style.display = 'none';
+                const hand = results.multiHandLandmarks[0];
+                
+                hand.forEach((lm, i) => {
                     const tx = (lm.x - 0.5) * -3.5;
                     const ty = (0.5 - lm.y) * 2.5 + 1.1;
                     const tz = -0.8 + (lm.z * 0.4);
 
-                    // Apply Smoothing (Lerp)
-                    targetPositions[i].x += (tx - targetPositions[i].x) * LERP_FACTOR;
-                    targetPositions[i].y += (ty - targetPositions[i].y) * LERP_FACTOR;
-                    targetPositions[i].z += (tz - targetPositions[i].z) * LERP_FACTOR;
+                    // Apply Smoothing
+                    smoothHand[i].x = lerp(smoothHand[i].x, tx, 0.4);
+                    smoothHand[i].y = lerp(smoothHand[i].y, ty, 0.4);
+                    smoothHand[i].z = lerp(smoothHand[i].z, tz, 0.4);
 
-                    joints[i].setAttribute('position', `${targetPositions[i].x} ${targetPositions[i].y} ${targetPositions[i].z}`);
+                    joints[i].setAttribute('position', `${smoothHand[i].x} ${smoothHand[i].y} ${smoothHand[i].z}`);
                 });
 
-                // Interaction Logic (Pinch to Grab)
-                const thumb = targetPositions[4];
-                const index = targetPositions[8];
-                const palm = targetPositions[9];
-                const dist = Math.hypot(index.x - thumb.x, index.y - thumb.y);
-
-                if (dist < 0.1) {
+                // Grab Logic
+                const thumb = smoothHand[4];
+                const index = smoothHand[8];
+                const palm = smoothHand[9];
+                if (Math.hypot(index.x - thumb.x, index.y - thumb.y) < 0.08) {
                     if (!grabbedObj) {
                         document.querySelectorAll('.grab').forEach(obj => {
-                            const oPos = obj.getAttribute('position');
-                            if (Math.hypot(palm.x - oPos.x, palm.y - oPos.y) < 0.25) grabbedObj = obj;
+                            const p = obj.getAttribute('position');
+                            if (Math.hypot(palm.x - p.x, palm.y - p.y) < 0.2) grabbedObj = obj;
                         });
                     }
                 } else { grabbedObj = null; }
 
-                if (grabbedObj) {
-                    grabbedObj.setAttribute('position', `${palm.x} ${palm.y} ${palm.z}`);
-                }
+                if (grabbedObj) grabbedObj.setAttribute('position', `${palm.x} ${palm.y} ${palm.z}`);
             }
-            requestAnimationFrame(render);
-        }
+        });
 
-        async function initCamera() {
+        async function init() {
+            status.innerText = "Requesting Camera...";
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { width: 640, height: 480, facingMode: "user" } 
-                });
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
                 video.srcObject = stream;
                 await video.play();
                 
-                async function process() {
-                    await hands.send({ image: video });
-                    setTimeout(process, 10); // Performance throttle
-                }
-                process();
-                render();
+                const camera = new Camera(video, {
+                    onFrame: async () => { await hands.send({image: video}); },
+                    width: 640, height: 480
+                });
+                camera.start();
                 document.querySelector('a-scene').enterVR();
             } catch (err) {
-                status.innerText = "CAMERA ERROR: " + err.message;
+                status.innerText = "Error: " + err.message;
             }
         }
 
-        // Show Start Button after Assets Load
-        window.addEventListener('load', () => {
-            spinner.style.display = 'none';
-            startBtn.style.display = 'block';
-            status.innerText = "HARDWARE READY";
-        });
-
-        startBtn.onclick = initCamera;
+        startBtn.onclick = init;
     </script>
 </body>
 </html>
