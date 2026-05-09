@@ -3,120 +3,114 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Caddy MR Passthrough</title>
+    <title>Caddy VR | True Mixed Reality</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 
     <style>
         body { margin: 0; overflow: hidden; background: #000; }
-        #gui { 
+        #overlay { 
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: #111; color: #00ff00; display: flex; 
+            background: #000; color: #00ff00; display: flex; 
             flex-direction: column; justify-content: center; 
             align-items: center; z-index: 1000; font-family: monospace;
         }
         button { 
-            padding: 20px 40px; font-size: 22px; cursor: pointer; 
-            background: #00ff00; border: none; border-radius: 10px; 
-            font-weight: bold; color: black; margin-top: 20px;
+            padding: 20px 40px; font-size: 20px; cursor: pointer; 
+            background: #00ff00; border: none; border-radius: 10px; font-weight: bold;
         }
-        .status-msg { font-size: 14px; color: #888; margin-bottom: 10px; }
+        #video-canvas { display: none; }
     </style>
 </head>
 
 <body>
-    <div id="gui">
-        <h1 style="margin:0">CADDY MR</h1>
-        <p class="status-msg" id="status">Initializing Camera...</p>
-        <button id="start-btn" style="display:none">START PASSTHROUGH</button>
+    <div id="overlay">
+        <h1>CADDY MR SYSTEM</h1>
+        <p id="status">INITIALIZING PASSTHROUGH...</p>
+        <button id="start-btn" style="display:none">ENGAGE MR</button>
     </div>
     
     <video id="input_video" style="display:none" playsinline></video>
+    <canvas id="video-canvas"></canvas>
 
-    <a-scene xr-mode-ui="enabled: true">
+    <a-scene xr-mode-ui="enabled: true" renderer="antialias: true; colorManagement: true;">
         <a-assets>
-            <canvas id="feed-canvas"></canvas>
+            <canvas id="tex-canvas"></canvas>
         </a-assets>
 
-        <a-sky id="mr-background" material="src: #feed-canvas; shader: flat" rotation="0 -90 0"></a-sky>
+        <a-sphere id="mr-sphere" 
+                  radius="100" 
+                  material="src: #tex-canvas; shader: flat; side: back" 
+                  rotation="0 -90 0">
+        </a-sphere>
 
         <a-entity id="rig">
-            <a-camera id="main-cam" position="0 1.6 0" look-controls></a-camera>
+            <a-camera position="0 1.6 0" look-controls></a-camera>
         </a-entity>
 
-        <a-sphere id="hand-cursor" radius="0.03" color="yellow" material="emissive: yellow; emissiveIntensity: 2"></a-sphere>
+        <a-sphere id="hand-cursor" radius="0.04" color="yellow" material="emissive: yellow; emissiveIntensity: 2"></a-sphere>
+
+        <a-box position="0 1.5 -1.5" width="0.2" height="0.2" depth="0.2" color="#444"></a-box>
 
         <a-light type="ambient" intensity="1"></a-light>
     </a-scene>
 
     <script>
         const videoElement = document.getElementById('input_video');
-        const feedCanvas = document.getElementById('feed-canvas');
-        const feedCtx = feedCanvas.getContext('2d');
+        const texCanvas = document.getElementById('tex-canvas');
+        const texCtx = texCanvas.getContext('2d');
         const handCursor = document.getElementById('hand-cursor');
         const startBtn = document.getElementById('start-btn');
-        const statusMsg = document.getElementById('status');
         const scene = document.querySelector('a-scene');
 
-        // Initialize MediaPipe Hands
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
 
         hands.setOptions({
             maxNumHands: 1,
-            modelComplexity: 0, 
+            modelComplexity: 0,
             minDetectionConfidence: 0.6,
             minTrackingConfidence: 0.6
         });
 
         hands.onResults((results) => {
-            // Update the MR Passthrough Canvas
+            // Update the MR Texture
             if (results.image) {
-                feedCanvas.width = results.image.width;
-                feedCanvas.height = results.image.height;
-                feedCtx.drawImage(results.image, 0, 0, feedCanvas.width, feedCanvas.height);
+                if (texCanvas.width !== results.image.width) {
+                    texCanvas.width = results.image.width;
+                    texCanvas.height = results.image.height;
+                }
+                texCtx.drawImage(results.image, 0, 0, texCanvas.width, texCanvas.height);
                 
-                // Force A-Frame to refresh the sky texture
-                const sky = document.getElementById('mr-background');
-                if (sky.components.material && sky.components.material.material.map) {
-                    sky.components.material.material.map.needsUpdate = true;
+                // CRITICAL: Manually update the A-Frame texture map
+                const mrSphere = document.getElementById('mr-sphere');
+                if (mrSphere.components.material.material.map) {
+                    mrSphere.components.material.material.map.needsUpdate = true;
                 }
             }
 
-            // Handle Hand Tracking Logic
+            // Tracking and Drawing
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const hand = results.multiHandLandmarks[0];
-                const indexTip = hand[8];
-                const thumbTip = hand[4];
-
-                // Coordinate Mapping for Environment (Back) Camera
-                // X: (0-1) to (-2.5 to 2.5), Y: (0-1) to (0.5 to 3.0)
-                const x = (indexTip.x - 0.5) * 5; 
-                const y = (0.5 - indexTip.y) * 4 + 1.6; 
+                const x = (hand[8].x - 0.5) * 5; 
+                const y = (0.5 - hand[8].y) * 4 + 1.6; 
                 const z = -1.5; 
 
                 handCursor.setAttribute('position', `${x} ${y} ${z}`);
 
-                // Pinch to Draw (Mixed Reality Interaction)
-                const pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-                if (pinchDist < 0.05) {
-                    handCursor.setAttribute('color', 'red');
-                    
-                    // Create a 3D dot in the air
+                const pinch = Math.hypot(hand[8].x - hand[4].x, hand[8].y - hand[4].y);
+                if (pinch < 0.05) {
                     const dot = document.createElement('a-sphere');
-                    dot.setAttribute('radius', '0.015');
+                    dot.setAttribute('radius', '0.02');
                     dot.setAttribute('color', 'red');
                     dot.setAttribute('position', `${x} ${y} ${z}`);
                     scene.appendChild(dot);
-                } else {
-                    handCursor.setAttribute('color', 'yellow');
                 }
             }
         });
 
-        // Use the Back Camera (Environment)
         const camera = new Camera(videoElement, {
             onFrame: async () => { await hands.send({image: videoElement}); },
             width: 640, height: 480, facingMode: 'environment'
@@ -124,20 +118,17 @@
 
         window.onload = () => {
             if (location.protocol !== 'https:') {
-                statusMsg.innerHTML = "<b style='color:red'>HTTPS REQUIRED!</b><br>Enable 'Enforce HTTPS' in GitHub Settings.";
+                document.getElementById('status').innerText = "HTTPS REQUIRED";
             } else {
-                statusMsg.innerText = "System Ready.";
+                document.getElementById('status').innerText = "SYSTEM READY";
                 startBtn.style.display = "block";
             }
         };
 
         startBtn.onclick = () => {
-            document.getElementById('gui').style.display = 'none';
-            camera.start().catch(err => {
-                alert("Camera error: " + err.message);
-                document.getElementById('gui').style.display = 'flex';
-            });
-            // Trigger Stereoscopic View
+            document.getElementById('overlay').style.display = 'none';
+            camera.start();
+            // Enter VR / Cardboard mode
             scene.enterVR();
         };
     </script>
