@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Caddy MR | Final Passthrough Fix</title>
+    <title>Caddy MR | True Passthrough</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -26,24 +26,23 @@
 <body>
     <div id="ui">
         <h1>CADDY MR SYSTEM</h1>
-        <p id="status">INITIATING PASSTHROUGH...</p>
-        <button id="start-btn" style="display:none">START MIXED REALITY</button>
+        <p id="status">INITIATING MR LINK...</p>
+        <button id="start-btn" style="display:none">START SYSTEM</button>
     </div>
     
     <video id="input_video" style="display:none" playsinline></video>
 
-    <a-scene renderer="colorManagement: true; alpha: true;">
+    <a-scene renderer="antialias: true; alpha: true; colorManagement: true;">
         <a-assets>
             <canvas id="tex-canvas"></canvas>
         </a-assets>
 
-        <a-entity id="camera-rig">
+        <a-entity id="rig">
             <a-camera position="0 1.6 0" look-controls>
-                <a-plane id="passthrough-plane" 
-                         position="0 0 -20" 
-                         rotation="0 0 0" 
-                         width="60" height="45" 
-                         material="src: #tex-canvas; shader: flat; transparent: false; fog: false">
+                <a-plane id="mr-plane" 
+                         position="0 0 -30" 
+                         width="80" height="60" 
+                         material="src: #tex-canvas; shader: flat; side: double; transparent: false; fog: false">
                 </a-plane>
             </a-camera>
         </a-entity>
@@ -76,7 +75,7 @@
         });
 
         hands.onResults((results) => {
-            // Update the Passthrough Background
+            // Update the Passthrough Canvas
             if (results.image) {
                 if (texCanvas.width !== results.image.width) {
                     texCanvas.width = results.image.width;
@@ -84,17 +83,22 @@
                 }
                 texCtx.drawImage(results.image, 0, 0, texCanvas.width, texCanvas.height);
                 
-                const plane = document.getElementById('passthrough-plane');
-                if (plane.getObject3D('mesh')) {
-                    const mat = plane.getObject3D('mesh').material;
-                    if (mat.map) mat.map.needsUpdate = true;
+                // FORCE THE TEXTURE UPDATE
+                // This is the most important part: telling A-Frame the canvas has changed
+                const mrPlane = document.getElementById('mr-plane');
+                const mesh = mrPlane.getObject3D('mesh');
+                if (mesh && mesh.material.map) {
+                    mesh.material.map.needsUpdate = true;
                 }
             }
 
-            // Hand Tracking & Drawing
+            // Hand Tracking & 3D Drawing
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const hand = results.multiHandLandmarks[0];
-                const x = (hand[8].x - 0.5) * -5; // Inverted for back camera perspective
+                
+                // Coordinate mapping for BACK camera (environment)
+                // Adjusting X/Y scale for a better "reach" feel
+                const x = (hand[8].x - 0.5) * 5; 
                 const y = (0.5 - hand[8].y) * 4 + 1.6; 
                 const z = -1.5; 
 
@@ -103,7 +107,8 @@
                 const pinch = Math.hypot(hand[8].x - hand[4].x, hand[8].y - hand[4].y);
                 if (pinch < 0.05) {
                     handCursor.setAttribute('color', 'red');
-                    // 3D DRAWING
+                    
+                    // Create 3D Ink
                     const dot = document.createElement('a-sphere');
                     dot.setAttribute('radius', '0.02');
                     dot.setAttribute('color', 'red');
@@ -128,7 +133,7 @@
         startBtn.onclick = () => {
             document.getElementById('ui').style.display = 'none';
             camera.start();
-            scene.enterVR();
+            scene.enterVR(); // Switches to split-screen Cardboard view
         };
     </script>
 </body>
