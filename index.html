@@ -2,89 +2,96 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>CADDY VR Clone | Assembly & Annotation</title>
+    <title>CADDY VR | Desktop Workstation</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 
     <style>
         body { margin: 0; overflow: hidden; background: #000; }
-        #ui { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #111; color: #00ff00; 
-              display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; font-family: monospace; }
-        button { padding: 20px 40px; font-size: 20px; cursor: pointer; background: #00ff00; border: none; border-radius: 10px; font-weight: bold; color: black; }
-        .hint { margin-top: 15px; color: #888; font-size: 14px; text-align: center; }
+        #ui { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; color: #00ff00; 
+              display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; font-family: 'Courier New', monospace; }
+        button { padding: 20px 50px; font-size: 22px; cursor: pointer; background: #00ff00; border: none; border-radius: 50px; font-weight: bold; color: black; box-shadow: 0 0 15px #00ff00; }
+        .info { margin-top: 20px; color: #666; text-align: center; font-size: 14px; }
     </style>
 </head>
 
 <body>
     <div id="ui">
-        <h1>CADDY VR CLONE</h1>
-        <p>Assembly • Disassembly • 3D Draw</p>
-        <button id="start-btn">INITIALIZE VR INTERFACE</button>
-        <div class="hint">PINCH: Draw in 3D<br>FIST: Explode/Assemble Model</div>
+        <h1 style="letter-spacing: 5px;">CADDY VR</h1>
+        <p>ADVANCED CAD VISUALIZATION</p>
+        <button id="start-btn">BOOT SYSTEM</button>
+        <div class="info">Place phone in headset.<br>Use your hands to interact with the engine on the table.</div>
     </div>
     
     <video id="input_video" style="display:none" playsinline></video>
 
-    <a-scene>
-        <a-sky color="#050505"></a-sky>
+    <a-scene shadow="type: pcfsoft">
+        <a-sky color="#080808"></a-sky>
 
-        <a-entity id="hand-skeleton"></a-entity>
+        <a-box id="table" position="0 0.7 -1" width="1.5" height="0.05" depth="1" color="#1a1a1a" shadow></a-box>
+        <a-box id="table-leg-l" position="-0.6 0.35 -1" width="0.05" height="0.7" depth="0.05" color="#111"></a-box>
+        <a-box id="table-leg-r" position="0.6 0.35 -1" width="0.05" height="0.7" depth="0.05" color="#111"></a-box>
 
-        <a-entity id="complex-model" position="0 1.5 -1.2">
-            <a-box id="core" width="0.3" height="0.3" depth="0.3" color="#444"></a-box>
+        <a-entity id="engine-assembly" position="0 1.1 -1">
+            <a-box id="engine-block" width="0.3" height="0.3" depth="0.4" color="#333" metalness="0.5" shadow></a-box>
             
-            <a-sphere id="part-1" class="engine-part" position="0.2 0 0" radius="0.1" color="#00ffff"></a-sphere>
-            <a-sphere id="part-2" class="engine-part" position="-0.2 0 0" radius="0.1" color="#00ffff"></a-sphere>
-            <a-cylinder id="part-3" class="engine-part" position="0 0.2 0" radius="0.05" height="0.2" color="#ff00ff"></a-cylinder>
-            <a-cylinder id="part-4" class="engine-part" position="0 -0.2 0" radius="0.05" height="0.2" color="#ff00ff"></a-cylinder>
+            <a-cylinder id="piston-l" position="-0.2 0 0" rotation="0 0 90" radius="0.08" height="0.1" color="#00ffff"></a-cylinder>
+            <a-cylinder id="piston-r" position="0.2 0 0" rotation="0 0 90" radius="0.08" height="0.1" color="#00ffff"></a-cylinder>
+            <a-box id="top-cover" position="0 0.2 0" width="0.25" height="0.05" depth="0.35" color="#ff0055"></a-box>
+            <a-sphere id="front-gear" position="0 0 0.25" radius="0.1" color="#ffcc00"></a-sphere>
         </a-entity>
 
-        <a-plane position="1.2 1.8 -1.5" width="0.8" height="0.5" color="#222">
-            <a-text value="GESTURES:\nPinch: Draw\nFist: Explode" align="center" width="2" color="white"></a-text>
-        </a-plane>
+        <a-entity id="hand-rig"></a-entity>
+        
+        <a-entity id="annotation-layer"></a-entity>
 
-        <a-entity id="drawing-container"></a-entity>
+        <a-light type="ambient" intensity="0.4"></a-light>
+        <a-light type="spot" position="0 3 -1" target="#table" intensity="1" angle="30" shadow></a-light>
+        <a-light type="point" position="-1 2 0" intensity="0.5" color="#00ff00"></a-light>
 
-        <a-light type="ambient" intensity="0.7"></a-light>
-        <a-light type="point" position="2 4 4" intensity="1"></a-light>
         <a-camera position="0 1.6 0"></a-camera>
     </a-scene>
 
     <script>
         const videoElement = document.getElementById('input_video');
-        const skeleton = document.getElementById('hand-skeleton');
+        const handRig = document.getElementById('hand-rig');
         const startBtn = document.getElementById('start-btn');
-        const scene = document.querySelector('a-scene');
-        const model = document.getElementById('complex-model');
+        const inkContainer = document.getElementById('annotation-layer');
         
         let joints = [];
         let isExploded = false;
 
-        // Setup 21 Joints for the Hand Skeleton
+        // Create the 21-point hand skeleton
         for (let i = 0; i < 21; i++) {
-            let dot = document.createElement('a-sphere');
-            dot.setAttribute('radius', '0.01');
-            dot.setAttribute('color', '#00ff00');
-            skeleton.appendChild(dot);
-            joints.push(dot);
+            let joint = document.createElement('a-sphere');
+            joint.setAttribute('radius', '0.012');
+            joint.setAttribute('color', '#00ff00');
+            joint.setAttribute('material', 'emissive: #00ff00; emissiveIntensity: 0.5');
+            handRig.appendChild(joint);
+            joints.push(joint);
         }
 
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
 
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
 
         hands.onResults((results) => {
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const hand = results.multiHandLandmarks[0];
                 
-                // Update Skeleton Position
+                // Track Hand Joints
                 hand.forEach((lm, i) => {
-                    const x = (lm.x - 0.5) * -3.5; 
+                    const x = (lm.x - 0.5) * -3.5; // Mirrored for standard phone use
                     const y = (0.5 - lm.y) * 2.5 + 1.5;
-                    const z = -1.2 + (lm.z * 0.5);
+                    const z = -1.0 + (lm.z * 0.5);
                     joints[i].setAttribute('position', `${x} ${y} ${z}`);
                 });
 
@@ -92,55 +99,54 @@
                 const index = hand[8];
                 const pinky = hand[20];
 
-                // --- 1. PINCH GESTURE: DRAWING ---
+                // --- GESTURE: PINCH (ANNOTATION) ---
                 const pinchDist = Math.hypot(index.x - thumb.x, index.y - thumb.y);
                 if (pinchDist < 0.05) {
-                    const x = (index.x - 0.5) * -3.5;
-                    const y = (0.5 - index.y) * 2.5 + 1.5;
-                    drawPoint(x, y, -1.2);
+                    const ax = (index.x - 0.5) * -3.5;
+                    const ay = (0.5 - index.y) * 2.5 + 1.5;
+                    createInk(ax, ay, -1.0);
                 }
 
-                // --- 2. FIST GESTURE: EXPLODE/ASSEMBLE ---
-                // Detect if fingers are curled (Fist)
+                // --- GESTURE: FIST (EXPLODE ENGINE) ---
                 const fistDist = Math.hypot(index.x - pinky.x, index.y - pinky.y);
-                if (fistDist < 0.1 && !isExploded) {
-                    triggerExplosion(true);
+                if (fistDist < 0.12 && !isExploded) {
+                    toggleExplosion(true);
                     isExploded = true;
                 } else if (fistDist > 0.3 && isExploded) {
-                    triggerExplosion(false);
+                    toggleExplosion(false);
                     isExploded = false;
                 }
             }
         });
 
-        function drawPoint(x, y, z) {
-            const dot = document.createElement('a-sphere');
-            dot.setAttribute('radius', '0.008');
-            dot.setAttribute('color', '#ff0000');
-            dot.setAttribute('position', `${x} ${y} ${z}`);
-            document.getElementById('drawing-container').appendChild(dot);
+        function createInk(x, y, z) {
+            const ink = document.createElement('a-sphere');
+            ink.setAttribute('radius', '0.007');
+            ink.setAttribute('color', '#ff0000');
+            ink.setAttribute('position', `${x} ${y} ${z}`);
+            inkContainer.appendChild(ink);
         }
 
-        function triggerExplosion(explode) {
-            const p1 = document.getElementById('part-1');
-            const p2 = document.getElementById('part-2');
-            const p3 = document.getElementById('part-3');
-            const p4 = document.getElementById('part-4');
+        function toggleExplosion(state) {
+            const pistonL = document.getElementById('piston-l');
+            const pistonR = document.getElementById('piston-r');
+            const topCover = document.getElementById('top-cover');
+            const gear = document.getElementById('front-gear');
 
-            const dur = 1000;
-            const ease = "easeOutElastic";
+            const config = state ? {
+                pL: "-0.6 0.2 0.2", pR: "0.6 0.2 0.2", tC: "0 0.6 0", g: "0 0 0.6"
+            } : {
+                pL: "-0.2 0 0", pR: "0.2 0 0", tC: "0 0.2 0", g: "0 0 0.25"
+            };
 
-            if (explode) {
-                p1.setAttribute('animation', `property: position; to: 0.8 0 0.5; dur: ${dur}; easing: ${ease}`);
-                p2.setAttribute('animation', `property: position; to: -0.8 0 0.5; dur: ${dur}; easing: ${ease}`);
-                p3.setAttribute('animation', `property: position; to: 0 0.8 -0.5; dur: ${dur}; easing: ${ease}`);
-                p4.setAttribute('animation', `property: position; to: 0 -0.8 -0.5; dur: ${dur}; easing: ${ease}`);
-            } else {
-                p1.setAttribute('animation', `property: position; to: 0.2 0 0; dur: ${dur}; easing: ${ease}`);
-                p2.setAttribute('animation', `property: position; to: -0.2 0 0; dur: ${dur}; easing: ${ease}`);
-                p3.setAttribute('animation', `property: position; to: 0 0.2 0; dur: ${dur}; easing: ${ease}`);
-                p4.setAttribute('animation', `property: position; to: 0 -0.2 0; dur: ${dur}; easing: ${ease}`);
-            }
+            const anim = (el, pos) => {
+                el.setAttribute('animation', `property: position; to: ${pos}; dur: 800; easing: easeOutExpo`);
+            };
+
+            anim(pistonL, config.pL);
+            anim(pistonR, config.pR);
+            anim(topCover, config.tC);
+            anim(gear, config.g);
         }
 
         const camera = new Camera(videoElement, {
@@ -151,7 +157,7 @@
         startBtn.onclick = () => {
             document.getElementById('ui').style.display = 'none';
             camera.start();
-            scene.enterVR();
+            document.querySelector('a-scene').enterVR();
         };
     </script>
 </body>
