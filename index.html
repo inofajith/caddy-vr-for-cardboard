@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Caddy VR | MR Passthrough Fixed</title>
+    <title>Caddy VR | Mixed Reality Fixed</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
@@ -40,15 +40,14 @@
         <a-entity id="rig">
             <a-camera position="0 1.6 0" look-controls>
                 <a-plane id="mr-plane" 
-                         position="0 0 -25" 
-                         width="70" height="50" 
+                         position="0 0 -30" 
+                         width="80" height="60" 
                          material="src: #tex-canvas; shader: flat; transparent: false; fog: false">
                 </a-plane>
             </a-camera>
         </a-entity>
 
         <a-sphere id="hand-cursor" radius="0.04" color="yellow" material="emissive: yellow; emissiveIntensity: 2"></a-sphere>
-
         <a-entity id="ink-container"></a-entity>
 
         <a-light type="ambient" intensity="1.5"></a-light>
@@ -61,7 +60,6 @@
         const handCursor = document.getElementById('hand-cursor');
         const startBtn = document.getElementById('start-btn');
         const scene = document.querySelector('a-scene');
-        const inkContainer = document.getElementById('ink-container');
 
         const hands = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -75,7 +73,6 @@
         });
 
         hands.onResults((results) => {
-            // Update the Passthrough Canvas
             if (results.image) {
                 if (texCanvas.width !== results.image.width) {
                     texCanvas.width = results.image.width;
@@ -83,7 +80,7 @@
                 }
                 texCtx.drawImage(results.image, 0, 0, texCanvas.width, texCanvas.height);
                 
-                // Force GPU Texture update
+                // CRITICAL: Manually tell the GPU to update the texture from the canvas
                 const mrPlane = document.getElementById('mr-plane');
                 const mesh = mrPlane.getObject3D('mesh');
                 if (mesh && mesh.material.map) {
@@ -91,7 +88,6 @@
                 }
             }
 
-            // Hand Position Mapping (Back Camera)
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
                 const hand = results.multiHandLandmarks[0];
                 const x = (hand[8].x - 0.5) * 5.5; 
@@ -107,7 +103,7 @@
                     dot.setAttribute('radius', '0.015');
                     dot.setAttribute('color', 'red');
                     dot.setAttribute('position', `${x} ${y} ${z}`);
-                    inkContainer.appendChild(dot);
+                    document.getElementById('ink-container').appendChild(dot);
                 } else {
                     handCursor.setAttribute('color', 'yellow');
                 }
@@ -120,22 +116,15 @@
         });
 
         window.onload = () => {
-            document.getElementById('status').innerText = "SYSTEM READY";
+            document.getElementById('status').innerText = "LINK READY";
             startBtn.style.display = "block";
         };
 
         startBtn.onclick = () => {
             document.getElementById('ui').style.display = 'none';
-            
-            // Interaction to unlock audio/video on mobile
-            videoElement.play().then(() => {
-                camera.start();
-                scene.enterVR();
-            }).catch(err => {
-                console.error("Camera force play failed", err);
-                camera.start();
-                scene.enterVR();
-            });
+            // Start the camera and enter the standard VR mode (Cardboard)
+            camera.start();
+            scene.enterVR();
         };
     </script>
 </body>
