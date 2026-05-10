@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>CADDY MR | Solid Hand Mesh</title>
+    <title>CADDY MR | CLEAN START</title>
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -13,125 +13,109 @@
             position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
             object-fit: cover; z-index: -1; transform: scaleX(-1);
         }
-        #ui { 
+        #boot { 
             position: fixed; inset: 0; display: flex; align-items: center; 
             justify-content: center; background: #000; z-index: 100; 
         }
-        button { padding: 25px 50px; font-size: 20px; background: #0f0; border: none; font-weight: bold; cursor: pointer; }
+        button { padding: 30px; font-size: 24px; background: #0f0; border: none; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div id="ui">
-        <button onclick="startMR()">INITIALIZE MR WORKSHOP</button>
+    <div id="boot">
+        <button onclick="bootMR()">START MR WORKSHOP</button>
     </div>
 
     <video id="webcam" playsinline></video>
 
-    <a-scene vr-mode-ui="enabled: true">
-        <a-entity id="hand-mesh-root"></a-entity>
+    <a-scene renderer="antialias: false; precision: low;">
+        <a-entity id="hand-root"></a-entity>
 
-        <a-entity id="engine-block" class="grab" position="0 1.2 -0.5">
-            <a-box width="0.15" height="0.15" depth="0.15" color="#555" metalness="0.6" roughness="0.2"></a-box>
-            <a-text value="CAD MODEL" align="center" position="0 0.12 0" scale="0.2 0.2 0.2"></a-text>
+        <a-entity id="engine" position="0 1.2 -0.5">
+            <a-box width="0.1" height="0.1" depth="0.1" color="#888"></a-box>
         </a-entity>
 
-        <a-light type="ambient" intensity="1.2"></a-light>
-        <a-camera position="0 1.6 0" wasd-controls-enabled="false" look-controls="enabled: false"></a-camera>
+        <a-light type="ambient" intensity="1"></a-light>
+        <a-camera position="0 1.6 0" wasd-controls-enabled="false" look-controls-enabled="false"></a-camera>
     </a-scene>
 
     <script>
         const video = document.getElementById('webcam');
-        const root = document.getElementById('hand-mesh-root');
-        const jointSpheres = [];
-        
-        // Instead of lines, we use wider cylinders/capsules for a "Solid" feel
-        const bones = [];
-        const connections = [
-            [0, 1, 2, 3, 4], [0, 5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16], [17, 18, 19, 20], [0, 5, 9, 13, 17, 0]
-        ];
+        const root = document.getElementById('hand-root');
+        const jointData = [];
+        const meshBones = [];
 
-        // Create the joints (invisible, just for positioning)
+        // Mesh connection map
+        const map = [[0,1,2,3,4], [0,5,6,7,8], [9,10,11,12], [13,14,15,16], [17,18,19,20], [0,5,9,13,17,0]];
+
+        // Create the Mesh Bones (Cylinders)
         for (let i = 0; i < 21; i++) {
             let j = document.createElement('a-entity');
             root.appendChild(j);
-            jointSpheres.push(j);
+            jointData.push(j);
         }
 
-        // Create the "Solid Mesh" Bones
-        connections.forEach(path => {
+        map.forEach(path => {
             for (let i = 0; i < path.length - 1; i++) {
                 let b = document.createElement('a-cylinder');
-                b.setAttribute('radius', '0.015'); // Thick radius for solid look
-                b.setAttribute('color', '#ccc');   // Ghostly grey
+                b.setAttribute('radius', '0.015');
+                b.setAttribute('color', '#888'); // Solid Grey
                 b.setAttribute('material', 'flat');
-                b.setAttribute('opacity', '0.8');
                 root.appendChild(b);
-                bones.push({ el: b, s: path[i], e: path[i+1] });
+                meshBones.push({ el: b, s: path[i], e: path[i+1] });
             }
         });
 
-        const hands = new Hands({
+        const handsAI = new Hands({
             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
 
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 0, 
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
+        handsAI.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 
-        hands.onResults((res) => {
+        handsAI.onResults((res) => {
             if (res.multiHandLandmarks && res.multiHandLandmarks[0]) {
+                document.getElementById('boot').style.display = 'none';
                 const h = res.multiHandLandmarks[0];
                 
-                // Position joints
                 h.forEach((p, i) => {
                     const x = (p.x - 0.5) * -1.5;
                     const y = (0.5 - p.y) * 1.2 + 1.4;
                     const z = -0.4 + (p.z * 0.1);
-                    jointSpheres[i].setAttribute('position', `${x} ${y} ${z}`);
+                    jointData[i].setAttribute('position', `${x} ${y} ${z}`);
                 });
 
-                // Update Mesh Bones (Cylinders)
-                bones.forEach(bone => {
-                    const start = jointSpheres[bone.s].object3D.position;
-                    const end = jointSpheres[bone.e].object3D.position;
-                    
-                    const distance = start.distanceTo(end);
-                    const position = start.clone().lerp(end, 0.5);
-                    
-                    bone.el.setAttribute('position', position);
-                    bone.el.setAttribute('height', distance);
-                    
-                    // Point the cylinder at the next joint
+                meshBones.forEach(bone => {
+                    const start = jointData[bone.s].object3D.position;
+                    const end = jointData[bone.e].object3D.position;
+                    const dist = start.distanceTo(end);
+                    const pos = start.clone().lerp(end, 0.5);
+                    bone.el.setAttribute('position', pos);
+                    bone.el.setAttribute('height', dist);
                     bone.el.object3D.lookAt(end);
                     bone.el.object3D.rotateX(Math.PI / 2);
                 });
 
-                // Pinch to Grab
                 const pinch = Math.hypot(h[8].x - h[4].x, h[8].y - h[4].y);
                 if (pinch < 0.08) {
-                    const p = jointSpheres[9].getAttribute('position');
-                    document.getElementById('engine-block').setAttribute('position', `${p.x} ${p.y} -0.4`);
+                    const p = jointData[9].getAttribute('position');
+                    document.getElementById('engine').setAttribute('position', `${p.x} ${p.y} -0.4`);
                 }
             }
         });
 
-        async function startMR() {
-            document.getElementById('ui').style.display = 'none';
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                video: { width: 320, height: 240, facingMode: 'user' } 
-            });
-            video.srcObject = stream;
-            video.play();
-
-            const camera = new Camera(video, {
-                onFrame: async () => { await hands.send({image: video}); },
-                width: 320, height: 240
-            });
-            camera.start();
-            document.querySelector('a-scene').enterVR();
+        async function bootMR() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 320, height: 240, facingMode: 'user' } 
+                });
+                video.srcObject = stream;
+                video.play();
+                const cam = new Camera(video, {
+                    onFrame: async () => { await handsAI.send({image: video}); },
+                    width: 320, height: 240
+                });
+                cam.start();
+                document.querySelector('a-scene').enterVR();
+            } catch (e) { alert("Camera Error: Check Permissions"); }
         }
     </script>
 </body>
