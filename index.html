@@ -3,140 +3,155 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Caddy VR | Pro Edition</title>
+    <title>CADDY VR | WebXR Stable</title>
     
     <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
-        #launcher { 
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: #000; color: #00ff00; display: flex; 
-            flex-direction: column; justify-content: center; 
-            align-items: center; z-index: 9999; text-align: center;
+        body { margin: 0; background: #000; color: #0f0; font-family: 'Courier New', monospace; overflow: hidden; }
+        #launch-pad { 
+            position: fixed; inset: 0; background: radial-gradient(circle, #1a1a1a, #000); 
+            z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; 
         }
-        .btn { 
-            padding: 20px 50px; font-size: 22px; cursor: pointer; 
-            background: #00ff00; border: none; border-radius: 5px; 
-            font-weight: bold; color: black; margin-top: 20px;
-            box-shadow: 0 0 30px rgba(0, 255, 0, 0.3);
+        .start-btn { 
+            padding: 25px 60px; font-size: 22px; background: #0f0; color: #000; 
+            border: none; cursor: pointer; font-weight: bold; border-radius: 5px;
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.4);
         }
-        #status { font-size: 12px; color: #666; margin-top: 15px; }
+        #console { position: fixed; bottom: 10px; left: 10px; font-size: 10px; color: #444; z-index: 100; }
     </style>
 </head>
 
 <body>
-    <div id="launcher">
-        <h1 style="letter-spacing: 10px;">CADDY</h1>
-        <button id="start-btn" class="btn">START SYSTEM</button>
-        <p id="status">Awaiting User Interaction...</p>
+    <div id="launch-pad">
+        <h1 style="letter-spacing: 8px; margin-bottom: 5px;">CADDY VR</h1>
+        <p style="color: #666; margin-bottom: 30px;">STANDALONE WORKSHOP</p>
+        <button class="start-btn" onclick="startWorkshop()">BOOT SYSTEM</button>
+        <p id="msg" style="margin-top: 20px; font-size: 12px;">Waiting for user...</p>
     </div>
-    
-    <video id="input_video" style="display:none" playsinline muted></video>
 
-    <a-scene renderer="antialias: true; colorManagement: true;">
+    <div id="console">Hand Engine: Ready</div>
+    <video id="webcam" style="display:none" playsinline muted></video>
+
+    <a-scene renderer="colorManagement: true; antialias: true;">
         <a-sky color="#050505"></a-sky>
 
-        <a-box position="0 0.7 -0.8" width="1.5" height="0.05" depth="0.8" color="#111"></a-box>
+        <a-box position="0 0.7 -0.8" width="1.6" height="0.05" depth="1" color="#111"></a-box>
         
-        <a-entity id="shapes">
-            <a-box class="grab" position="-0.3 0.85 -0.8" width="0.12" height="0.12" depth="0.12" color="#ff4444"></a-box>
-            <a-sphere class="grab" position="0 0.85 -0.8" radius="0.08" color="#44ff44"></a-sphere>
-            <a-cylinder class="grab" position="0.3 0.85 -0.8" radius="0.06" height="0.15" color="#4444ff"></a-cylinder>
+        <a-entity id="ghost-hand"></a-entity>
+
+        <a-entity id="parts">
+            <a-box class="grabbable" position="-0.3 0.85 -0.8" width="0.12" height="0.12" depth="0.12" color="#ff3333"></a-box>
+            <a-sphere class="grabbable" position="0 0.85 -0.8" radius="0.08" color="#33ff33"></a-sphere>
+            <a-cylinder class="grabbable" position="0.3 0.85 -0.8" radius="0.06" height="0.15" color="#3333ff"></a-cylinder>
         </a-entity>
 
-        <a-entity id="hand-mesh"></a-entity>
-        
-        <a-light type="ambient" intensity="0.7"></a-light>
-        <a-light type="point" position="0 2 0" intensity="0.8"></a-light>
-        <a-camera position="0 1.6 0"></a-camera>
+        <a-light type="ambient" intensity="0.6"></a-light>
+        <a-light type="point" position="1 2 0" intensity="0.8"></a-light>
+        <a-camera position="0 1.6 0" look-controls="pointerLockEnabled: false"></a-camera>
     </a-scene>
 
     <script>
-        const video = document.getElementById('input_video');
-        const startBtn = document.getElementById('start-btn');
-        const status = document.getElementById('status');
-        const skeleton = document.getElementById('hand-mesh');
+        const video = document.getElementById('webcam');
+        const ghostHand = document.getElementById('ghost-hand');
+        const consoleLog = document.getElementById('console');
+        let currentGrab = null;
         
-        let joints = [];
-        let grabbedObj = null;
+        // Smoothing (Lerp) Variables
+        let lerpPoints = Array(21).fill().map(() => ({x: 0, y: 1.6, z: -1}));
 
-        // Smooth movement variables
-        const lerp = (a, b, t) => a + (b - a) * t;
-        let smoothHand = Array(21).fill().map(() => ({x: 0, y: 1.6, z: -1}));
+        // Hand Skeleton Structure
+        const connections = [
+            [0,1,2,3,4], [0,5,6,7,8], [0,9,10,11,12], [0,13,14,15,16], [0,17,18,19,20], [5,9,13,17]
+        ];
 
-        // Build Hand Visuals
-        for (let i = 0; i < 21; i++) {
-            let j = document.createElement('a-sphere');
-            j.setAttribute('radius', '0.015');
-            j.setAttribute('color', '#888');
-            j.setAttribute('opacity', '0.5');
-            skeleton.appendChild(j);
-            joints.push(j);
-        }
-
-        const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        const lines = [];
+        connections.forEach(path => {
+            for(let i=0; i < path.length - 1; i++) {
+                const l = document.createElement('a-entity');
+                l.setAttribute('line', {color: '#888', opacity: 0.6});
+                ghostHand.appendChild(l);
+                lines.push({ el: l, s: path[i], e: path[path.length - 1 - i === path[i] ? i : i+1] }); // Corrected logic
+            }
         });
-
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
-
-        hands.onResults((results) => {
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                document.getElementById('launcher').style.display = 'none';
-                const hand = results.multiHandLandmarks[0];
-                
-                hand.forEach((lm, i) => {
-                    const tx = (lm.x - 0.5) * -3.5;
-                    const ty = (0.5 - lm.y) * 2.5 + 1.1;
-                    const tz = -0.8 + (lm.z * 0.4);
-
-                    // Apply Smoothing
-                    smoothHand[i].x = lerp(smoothHand[i].x, tx, 0.4);
-                    smoothHand[i].y = lerp(smoothHand[i].y, ty, 0.4);
-                    smoothHand[i].z = lerp(smoothHand[i].z, tz, 0.4);
-
-                    joints[i].setAttribute('position', `${smoothHand[i].x} ${smoothHand[i].y} ${smoothHand[i].z}`);
-                });
-
-                // Grab Logic
-                const thumb = smoothHand[4];
-                const index = smoothHand[8];
-                const palm = smoothHand[9];
-                if (Math.hypot(index.x - thumb.x, index.y - thumb.y) < 0.08) {
-                    if (!grabbedObj) {
-                        document.querySelectorAll('.grab').forEach(obj => {
-                            const p = obj.getAttribute('position');
-                            if (Math.hypot(palm.x - p.x, palm.y - p.y) < 0.2) grabbedObj = obj;
-                        });
-                    }
-                } else { grabbedObj = null; }
-
-                if (grabbedObj) grabbedObj.setAttribute('position', `${palm.x} ${palm.y} ${palm.z}`);
+        
+        // Create actual bones for the "Ghost" look
+        const bones = [];
+        connections.forEach(path => {
+            for(let i=0; i < path.length - 1; i++) {
+                const b = document.createElement('a-entity');
+                b.setAttribute('line', {color: '#ccc', opacity: 0.5});
+                ghostHand.appendChild(b);
+                bones.push({ el: b, start: path[i], end: path[i+1] });
             }
         });
 
-        async function init() {
-            status.innerText = "Requesting Camera...";
+        const handAI = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        handAI.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
+
+        handAI.onResults((res) => {
+            if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+                document.getElementById('launch-pad').style.display = 'none';
+                const h = res.multiHandLandmarks[0];
+
+                h.forEach((pt, i) => {
+                    // Modern Coordinate Mapping
+                    const tx = (pt.x - 0.5) * -3.5;
+                    const ty = (0.5 - pt.y) * 2.5 + 1.1;
+                    const tz = -0.8 + (pt.z * 0.4);
+
+                    // Smoothing (Lerp)
+                    lerpPoints[i].x += (tx - lerpPoints[i].x) * 0.4;
+                    lerpPoints[i].y += (ty - lerpPoints[i].y) * 0.4;
+                    lerpPoints[i].z += (tz - lerpPoints[i].z) * 0.4;
+                });
+
+                // Render Ghost Bones
+                bones.forEach(b => {
+                    const p1 = lerpPoints[b.start];
+                    const p2 = lerpPoints[b.end];
+                    b.el.setAttribute('line', `start: ${p1.x} ${p1.y} ${p1.z}; end: ${p2.x} ${p2.y} ${p2.z}; color: #888`);
+                });
+
+                // Logic for "Quest-Style" Grab
+                const palm = lerpPoints[9];
+                const pinch = Math.hypot(lerpPoints[8].x - lerpPoints[4].x, lerpPoints[8].y - lerpPoints[4].y);
+
+                if (pinch < 0.1) {
+                    if (!currentGrab) {
+                        document.querySelectorAll('.grabbable').forEach(obj => {
+                            const oPos = obj.getAttribute('position');
+                            if (Math.hypot(palm.x - oPos.x, palm.y - oPos.y) < 0.25) currentGrab = obj;
+                        });
+                    }
+                } else { currentGrab = null; }
+
+                if (currentGrab) currentGrab.setAttribute('position', `${palm.x} ${palm.y} -0.8`);
+            }
+        });
+
+        async function startWorkshop() {
+            document.getElementById('msg').innerText = "CALIBRATING...";
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
                 video.srcObject = stream;
                 await video.play();
                 
-                const camera = new Camera(video, {
-                    onFrame: async () => { await hands.send({image: video}); },
+                const cam = new Camera(video, {
+                    onFrame: async () => { await handAI.send({image: video}); },
                     width: 640, height: 480
                 });
-                camera.start();
+                cam.start();
                 document.querySelector('a-scene').enterVR();
-            } catch (err) {
-                status.innerText = "Error: " + err.message;
+            } catch (e) {
+                alert("Camera access is required for Standalone VR.");
             }
         }
-
-        startBtn.onclick = init;
     </script>
 </body>
 </html>
